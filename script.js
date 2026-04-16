@@ -83,8 +83,6 @@ function autoFillShift() {
     // 1. 各スタッフの状態初期化
     let staffData = staffs.map((s, idx) => {
         const mySels = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
-        
-        // 希望休(希)と事前入力された(公)を一旦カウント
         const preHopeCount = mySels.filter(sel => sel.value === "希望休").length;
         const preOffCount = mySels.filter(sel => sel.value === "公休").length;
 
@@ -93,12 +91,12 @@ function autoFillShift() {
             sels: mySels,
             streak: 0,
             workDays: 0,
-            offTarget: 9, // 常勤の目標
-            currentOff: preHopeCount + preOffCount // 希＋公の合計
+            offTarget: 9,
+            currentOff: preHopeCount + preOffCount
         };
     });
 
-    // 2. リセット（希望休と事前入力公休以外は「出勤」）
+    // 2. 状態リセット
     staffData.forEach(s => {
         s.sels.forEach(sel => {
             if(sel.value !== "希望休" && sel.value !== "公休") sel.value = "出勤";
@@ -115,33 +113,29 @@ function autoFillShift() {
         }
     });
 
-    // 4. メインループ（日ごとの判定）
+    // 4. メインループ（日ごとに処理）
     for (let d = 0; d < daysInMonth; d++) {
         const need = parseInt(needInputs[d].value);
 
-        // A. 個人の絶対制約チェック
+        // A. 【最優先】強制休息：4連勤防止 & 非常勤上限
+        // 4連勤目は誰であっても強制的に公休にする
         staffData.forEach(s => {
             const cur = s.sels[d];
             if (cur.value === "希望休" || cur.value === "公休") return;
 
-            // 制約1: 4連勤防止
-            const isStreakLimit = (s.streak >= 3);
-            // 制約2: 非常勤10日上限
-            const isPartLimit = (s.config.type === 'part' && s.workDays >= 10);
-
-            if (isStreakLimit || isPartLimit) {
+            if (s.streak >= 3 || (s.config.type === 'part' && s.workDays >= 10)) {
                 cur.value = "公休";
                 s.currentOff++;
             }
         });
 
-        // B. 必要人数による調整（出勤者が多すぎる場合、公休が足りない人を優先して休ませる）
+        // B. 人数調整（出勤過多の場合に休ませる）
         let workers = staffData.filter(s => s.sels[d].value === "出勤" || s.sels[d].value === "有給");
         while (workers.length > need) {
             let candidates = workers.filter(s => s.sels[d].value === "出勤");
             if (candidates.length === 0) break;
 
-            // 優先順位: 1.連勤が長い 2.公休がまだ目標(9日)に達していない常勤
+            // バランス調整：公休が足りない人、または連勤が長い人を優先
             candidates.sort((a, b) => {
                 const aNeedOff = (a.config.type === 'full' && a.currentOff < a.offTarget);
                 const bNeedOff = (b.config.type === 'full' && b.currentOff < b.offTarget);
@@ -167,33 +161,40 @@ function autoFillShift() {
         });
     }
 
-    // 5. 常勤の公休9日ノルマ最終調整（足りない場合、出勤日から削る）
+    // 5. 【仕上げ】常勤の公休9日ノルマの徹底
     staffData.forEach(s => {
-        if (s.config.type === 'full') {
-            let availableForOff = s.sels.map((sel, idx) => ({sel, idx}))
-                                       .filter(item => item.sel.value === "出勤");
-            
-            while (s.currentOff < s.offTarget && availableForOff.length > 0) {
-                // 連勤を崩しやすいようにランダムに選ぶ
-                let r = Math.floor(Math.random() * availableForOff.length);
-                availableForOff[r].sel.value = "公休";
-                availableForOff.splice(r, 1);
-                s.currentOff++;
-            }
-        } else if (s.config.type === 'part') {
-            // 非常勤で10日を超えてしまっている場合の最終調整（基本はループ内で止まるが念のため）
-            let works = s.sels.filter(sel => sel.value === "出勤");
-            let total = s.sels.filter(sel => sel.value === "出勤" || sel.value === "有給").length;
-            while (total > 10 && works.length > 0) {
-                works[0].value = "公休";
-                works.shift();
-                total--;
+        if (s.config.type === 'full' && s.currentOff < s.offTarget) {
+            // 出勤日の中から「連勤が長くなっている場所」を見つけて優先的に削る
+            while (s.currentOff < s.offTarget) {
+                let maxStreak = 0;
+                let targetIdx = -1;
+                let currentStreak = 0;
+
+                // 現在のシフトから最も連勤が長い箇所を特定
+                s.sels.forEach((sel, idx) => {
+                    if (sel.value === "出勤" || sel.value === "有給") {
+                        currentStreak++;
+                        if (currentStreak > maxStreak && sel.value === "出勤") {
+                            maxStreak = currentStreak;
+                            targetIdx = idx;
+                        }
+                    } else {
+                        currentStreak = 0;
+                    }
+                });
+
+                if (targetIdx !== -1) {
+                    s.sels[targetIdx].value = "公休";
+                    s.currentOff++;
+                } else {
+                    break; // 削れる場所がない場合
+                }
             }
         }
     });
 
     updateSummary();
-    alert("「公休9日(希望含む)」「4連勤防止」「非常勤上限10日」を徹底して作成しました。");
+    alert("3連勤以内・常勤公休9日・非常勤上限をすべて適用しました。");
 }
 
 function updateSummary() {
