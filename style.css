@@ -3,7 +3,8 @@ body { font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hirag
 
 .controls { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: center; }
 .btn-group { display: flex; gap: 10px; }
-button { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+button { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+button:hover { opacity: 0.8; }
 .primary-btn { background: #007bff; color: white; }
 .add-btn { background: #28a745; color: white; }
 
@@ -13,13 +14,13 @@ button { padding: 10px 20px; border: none; border-radius: 6px; cursor: pointer; 
 .table-container { overflow-x: auto; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 8px; }
 table { border-collapse: collapse; min-width: 1200px; width: 100%; table-layout: fixed; }
 th, td { border: 1px solid #ddd; padding: 8px; text-align: center; width: 45px; }
-th:first-child, td:first-child { width: 120px; position: sticky; left: 0; background: #f8f9fa; z-index: 2; }
+th:first-child, td:first-child { width: 120px; position: sticky; left: 0; background: #f8f9fa; z-index: 2; font-weight: bold; }
 
-.shift-select { width: 100%; height: 35px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; background: white; }
-.need-count-input { width: 100%; height: 30px; text-align: center; font-size: 16px; border: 2px solid #007bff; border-radius: 4px; }
-.holiday-btn { font-size: 11px; padding: 4px; background: #ffc107; border: 1px solid #d39e00; border-radius: 4px; cursor: pointer; }
+.shift-select { width: 100%; height: 35px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer; }
+.need-count-input { width: 100%; height: 30px; text-align: center; font-size: 16px; border: 2px solid #007bff; border-radius: 4px; outline: none; }
+.holiday-btn { font-size: 11px; padding: 4px; background: #ffc107; border: 1px solid #d39e00; border-radius: 4px; cursor: pointer; width: 100%; }
 
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.summary-row { background: #e9ecef; padding: 12px; border-radius: 8px; font-size: 13px; border: 1px solid #dee2e6; }
+.summary-row { background: #e9ecef; padding: 12px; border-radius: 8px; font-size: 13px; border: 1px solid #dee2e6; line-height: 1.6; }
 .sat { color: #007bff; background: #eef6ff; }
 .sun { color: #dc3545; background: #fff5f5; }
