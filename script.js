@@ -24,7 +24,7 @@ function renderStaffList() {
             </select>
             <div style="margin-top:8px;">
                 有給: <input type="number" value="${s.paidDays}" min="0" style="width:50px;" onchange="staffs[${i}].paidDays=parseInt(this.value)||0; updateSummary();">日
-                <button onclick="removeStaff(${i})" style="padding:2px 5px; background:#ff4d4d; color:white; float:right;">×</button>
+                <button onclick="removeStaff(${i})" style="padding:2px 5px; background:#ff4d4d; color:white; border:none; border-radius:4px; float:right;">×</button>
             </div>
         </div>
     `).join('');
@@ -39,8 +39,10 @@ function generateTable() {
     const [year, month] = dateVal.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     
+    // 日付行
     document.getElementById('dateRow').innerHTML = '<th>名前</th>' + Array.from({length: daysInMonth}, (_, i) => `<th>${i+1}</th>`).join('');
     
+    // 曜日行
     let dayHtml = '<th>曜</th>';
     for (let d = 1; d <= daysInMonth; d++) {
         const dayOfWeek = new Date(year, month - 1, d).getDay();
@@ -49,6 +51,7 @@ function generateTable() {
     }
     document.getElementById('dayRow').innerHTML = dayHtml;
 
+    // シフト入力行
     document.getElementById('shiftBody').innerHTML = staffs.map((staff, sIdx) => {
         let cells = `<td>${staff.name}</td>`;
         for (let d = 1; d <= daysInMonth; d++) {
@@ -56,14 +59,23 @@ function generateTable() {
         }
         return `<tr>${cells}</tr>`;
     }).join('');
+
+    // 【修正ポイント】必要人数の入力行
+    let footHtml = '<td>必要人数</td>';
+    for (let d = 1; d <= daysInMonth; d++) {
+        footHtml += `<td><input type="number" class="need-count-input" data-day="${d}" value="3" style="width:35px; border:1px solid #ccc; text-align:center;"></td>`;
+    }
+    document.getElementById('shiftFoot').innerHTML = `<tr>${footHtml}</tr>`;
+    
     updateSummary();
 }
 
 function autoFillShift() {
     const selects = document.querySelectorAll('.shift-select');
-    const [year, month] = document.getElementById('targetMonth').value.split('-').map(Number);
+    const needInputs = document.querySelectorAll('.need-count-input'); // 人数入力を取得
+    const dateVal = document.getElementById('targetMonth').value;
+    const [year, month] = dateVal.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
-    const need = 3; // 1日あたりの必要人数
 
     let finalGrid = null;
     for (let t = 0; t < 1000; t++) {
@@ -83,9 +95,10 @@ function autoFillShift() {
             }
         });
 
-        // 2. 出勤配置（4連勤・非常勤10日制限）
+        // 2. 出勤配置
         let fail = false;
         for (let d = 0; d < daysInMonth; d++) {
+            const currentNeed = parseInt(needInputs[d].value) || 0; // 各日の必要人数を使用
             let candidates = staffs.map((_, i) => i).filter(sIdx => {
                 if (grid[sIdx][d] !== "") return false;
                 let streak = 0;
@@ -96,10 +109,10 @@ function autoFillShift() {
             }).sort(() => Math.random() - 0.5);
 
             for (let sIdx of candidates) {
-                if (grid.filter(row => row[d] === "出勤").length >= need) break;
+                if (grid.filter(row => row[d] === "出勤").length >= currentNeed) break;
                 grid[sIdx][d] = "出勤";
             }
-            if (grid.filter(row => row[d] === "出勤").length < need) { fail = true; break; }
+            if (grid.filter(row => row[d] === "出勤").length < currentNeed) { fail = true; break; }
         }
         if (fail) continue;
 
@@ -134,9 +147,9 @@ function autoFillShift() {
     if (finalGrid) {
         selects.forEach(sel => { sel.value = finalGrid[sel.dataset.staff][sel.dataset.day - 1]; });
         updateSummary();
-        alert("スマホ最適化版：生成完了");
+        alert("生成完了：すべての制限と必要人数をクリアしました。");
     } else {
-        alert("条件が厳しすぎます。スタッフ数や必要人数を見直してください。");
+        alert("条件が厳しすぎます。スタッフを増やすか、必要人数を減らしてください。");
     }
 }
 
@@ -147,6 +160,6 @@ function updateSummary() {
         const mySels = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
         const c = { "出勤":0, "公休":0, "希望休":0, "有給":0, "":0 };
         mySels.forEach(sel => { if(c.hasOwnProperty(sel.value)) c[sel.value]++; });
-        return `<div class="summary-row"><strong>${s.name}</strong> (${s.type==='full'?'常勤':'非常勤'})<br>出:${c["出勤"]}回 / 有給:${c["有給"]}日 / 休み計:${c["公休"]+c["希望休"]}日</div>`;
+        return `<div class="summary-row"><strong>${s.name}</strong> (${s.type==='full'?'常勤':'非常勤'})<br>出勤:${c["出勤"]}回 / 有給:${c["有給"]}日 / 休み計:${c["公休"]+c["希望休"]}日</div>`;
     }).join('');
 }
