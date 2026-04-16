@@ -2,20 +2,21 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>シフト作成システム - 最終完成版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>シフト作成 - 最終統合版</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
-        <h1>シフト作成システム</h1>
+        <h1>シフト作成システム（最終版）</h1>
         
         <div class="controls">
             <input type="month" id="targetMonth" onchange="generateTable()">
             <div class="btn-group">
                 <button onclick="addStaff()">＋スタッフ追加</button>
-                <button onclick="autoFillShift()" class="primary-btn">自動生成開始</button>
+                <button onclick="autoFillShift()" class="primary-btn">自動生成</button>
             </div>
+            <p style="font-size: 12px; color: #666;">※希望休や定休日（全員公休）を先に手動で選んでから「自動生成」を押してください。</p>
         </div>
 
         <div class="main-layout">
@@ -26,10 +27,9 @@
                     <thead>
                         <tr id="dateRow"></tr>
                         <tr id="dayRow"></tr>
-                    </thead>
+                        <tr id="holidayRow"></tr> </thead>
                     <tbody id="shiftBody"></tbody>
-                    <tfoot id="shiftFoot"></tfoot>
-                </table>
+                    <tfoot id="shiftFoot"></tfoot> </table>
             </div>
         </div>
 
