@@ -161,8 +161,11 @@ function autoFillShift() {
                     let weekEnd = weekStart + 7;
                     let weeklyCount = row.slice(weekStart, weekEnd).filter(v=>"出勤"===v).length;
 
+                    let currentCount = grid.filter(r => r[i] === "出勤").length;
+                    let target = dailyTargets[i];
                     let limit = isFull ? 4 : 2;
-                    if (sP + sN < limit && row.filter(v=>v==="出勤").length < (isFull ? 31 : 10)) {
+
+                    if (currentCount < target && sP + sN < limit) {
                         if (staffs[sIdx].type === 'part' && weeklyCount >= 3) {
                             row[i] = "公休";
                         } else {
@@ -183,12 +186,45 @@ function autoFillShift() {
                 }
                 if(bestIdx !== -1) {
                     if (row[bestIdx] === "出勤") {
-                        row[bestIdx] = "公休";
+                        let currentCount = grid.filter(r => r[bestIdx] === "出勤").length;
+                        let target = dailyTargets[bestIdx];
+                        if (currentCount > target) {
+                            row[bestIdx] = "公休";
+                        }
                     }
                 } else break;
                 safety++;
             }
         });
+
+        // 【修正：最終人数チェックおよび超過分調整】
+        for (let d = 0; d < daysInMonth; d++) {
+            let target = dailyTargets[d];
+            let workers = staffs.map((_, i) => i).filter(sIdx => grid[sIdx][d] === "出勤");
+
+            if (target === 3) {
+                // 3人目標は2〜3人であればOK
+                if (!(workers.length === 2 || workers.length === 3)) {
+                    success = false;
+                    break;
+                }
+                continue;
+            }
+
+            // 多すぎる場合 → 減らす（ランダムにポップ）
+            while (workers.length > target) {
+                let idx = workers.pop();
+                grid[idx][d] = "公休";
+            }
+
+            // 少なすぎる場合 → 失敗
+            if (workers.length < target) {
+                success = false;
+                break;
+            }
+        }
+
+        if (!success) continue;
 
         selects.forEach(sel => {
             const sIdx = parseInt(sel.dataset.staff);
