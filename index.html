@@ -2,230 +2,41 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>シフト作成システム - 最終統合版</title>
-    <style>
-        * { box-sizing: border-box; font-family: sans-serif; }
-        body { background: #f0f2f5; margin: 10px; color: #333; }
-        .container { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 1200px; margin: auto; }
-        h1 { font-size: 1.2rem; text-align: center; margin-bottom: 15px; }
-        .controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
-        .btn-group { display: flex; gap: 8px; }
-        button { flex: 1; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
-        .primary-btn { background: #007bff; color: white; }
-        .staff-panel { display: flex; overflow-x: auto; gap: 10px; margin-bottom: 15px; padding-bottom: 5px; }
-        .staff-item { flex: 0 0 200px; background: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-size: 13px; }
-        .table-container { overflow-x: auto; border: 1px solid #ddd; border-radius: 8px; }
-        table { border-collapse: collapse; min-width: 1200px; width: 100%; }
-        th, td { border: 1px solid #ddd; padding: 6px; text-align: center; }
-        th { background: #f1f3f5; font-size: 12px; }
-        .shift-select { width: 45px; height: 35px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; }
-        .need-count-input { width: 40px; height: 30px; text-align: center; font-size: 16px; border: 1px solid #007bff; border-radius: 4px; background: #e7f1ff; }
-        .holiday-btn { background: #ffcccc; padding: 4px; font-size: 10px; border-radius: 4px; cursor: pointer; border: 1px solid #f99; display: block; margin: auto; }
-        .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 15px; }
-        .summary-row { background: #fff; padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-size: 13px; }
-        .sat { color: #007bff; background: #eef6ff; }
-        .sun { color: #dc3545; background: #fff5f5; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>シフト作成システム</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <h1>シフト作成システム</h1>
-        
+
         <div class="controls">
-            <input type="month" id="targetMonth" onchange="generateTable()" style="padding:10px; font-size:16px; border-radius:8px; border:1px solid #ddd;">
+            <input type="month" id="targetMonth" onchange="generateTable()">
             <div class="btn-group">
-                <button onclick="addStaff()">＋スタッフ追加</button>
-                <button onclick="autoFillShift()" class="primary-btn">自動生成開始</button>
+                <button class="add-btn" onclick="addStaff()">＋スタッフ追加</button>
+                <button class="primary-btn" onclick="autoFillShift()">自動生成開始</button>
             </div>
-            <p style="font-size: 11px; color: #666; margin: 0;">※定休日（全員休み）や希望休を先に選んでから「自動生成」を押してください。</p>
         </div>
 
-        <div class="main-layout">
-            <div id="staffList" class="staff-panel"></div>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr id="dateRow"></tr>
-                        <tr id="dayRow"></tr>
-                        <tr id="holidayRow"></tr>
-                    </thead>
-                    <tbody id="shiftBody"></tbody>
-                    <tfoot id="shiftFoot"></tfoot>
-                </table>
-            </div>
+        <div id="staffList" class="staff-panel"></div>
+
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr id="dateRow"></tr>
+                    <tr id="dayRow"></tr>
+                    <tr id="holidayRow"></tr>
+                </thead>
+                <tbody id="shiftBody"></tbody>
+                <tfoot id="shiftFoot"></tfoot>
+            </table>
         </div>
 
         <div class="summary-panel">
-            <h3>集計確認</h3>
+            <h3>スタッフ別集計（自動計算）</h3>
             <div id="summaryList" class="summary-grid"></div>
         </div>
     </div>
-
-    <script>
-        let staffs = [
-            { name: "スタッフ1", type: "full", paidDays: 0 },
-            { name: "スタッフ2", type: "full", paidDays: 0 },
-            { name: "スタッフ3", type: "full", paidDays: 0 },
-            { name: "スタッフ4", type: "full", paidDays: 0 },
-            { name: "非常勤1", type: "part", paidDays: 0 }
-        ];
-
-        window.onload = () => {
-            const now = new Date();
-            document.getElementById('targetMonth').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-            renderStaffList();
-            generateTable();
-        };
-
-        function renderStaffList() {
-            const list = document.getElementById('staffList');
-            list.innerHTML = staffs.map((s, i) => `
-                <div class="staff-item">
-                    <input type="text" value="${s.name}" style="width:100%" onchange="staffs[${i}].name=this.value; generateTable();">
-                    <select onchange="staffs[${i}].type=this.value; updateSummary();" style="width:100%; margin:5px 0;">
-                        <option value="full" ${s.type==='full'?'selected':''}>常勤</option>
-                        <option value="part" ${s.type==='part'?'selected':''}>非常勤</option>
-                    </select>
-                    有給付与:<input type="number" value="${s.paidDays}" style="width:45px;" onchange="staffs[${i}].paidDays=parseInt(this.value)||0; updateSummary();">日
-                    <button onclick="removeStaff(${i})" style="color:red; float:right; background:none; border:none; font-weight:bold;">×</button>
-                </div>
-            `).join('');
-        }
-
-        function addStaff() { staffs.push({ name: "新規", type: "full", paidDays: 0 }); renderStaffList(); generateTable(); }
-        function removeStaff(idx) { staffs.splice(idx, 1); renderStaffList(); generateTable(); }
-
-        function generateTable() {
-            const dateVal = document.getElementById('targetMonth').value;
-            if(!dateVal) return;
-            const [year, month] = dateVal.split('-').map(Number);
-            const daysInMonth = new Date(year, month, 0).getDate();
-            
-            document.getElementById('dateRow').innerHTML = '<th>名前</th>' + Array.from({length: daysInMonth}, (_, i) => `<th>${i+1}</th>`).join('');
-            
-            let dayHtml = '<th>曜</th>';
-            let holHtml = '<th>定休</th>';
-            for (let d = 1; d <= daysInMonth; d++) {
-                const dayOfWeek = new Date(year, month - 1, d).getDay();
-                const className = dayOfWeek === 6 ? 'sat' : dayOfWeek === 0 ? 'sun' : '';
-                dayHtml += `<th class="${className}">${["日","月","火","水","木","金","土"][dayOfWeek]}</th>`;
-                holHtml += `<td><button class="holiday-btn" onclick="setHoliday(${d})">休み</button></td>`;
-            }
-            document.getElementById('dayRow').innerHTML = dayHtml;
-            document.getElementById('holidayRow').innerHTML = holHtml;
-
-            document.getElementById('shiftBody').innerHTML = staffs.map((staff, sIdx) => {
-                let cells = `<td>${staff.name}</td>`;
-                for (let d = 1; d <= daysInMonth; d++) {
-                    cells += `<td><select class="shift-select" data-staff="${sIdx}" data-day="${d}" onchange="updateSummary()"><option value="">-</option><option value="出勤">出</option><option value="公休">公</option><option value="希望休">希</option><option value="有給">有</option></select></td>`;
-                }
-                return `<tr>${cells}</tr>`;
-            }).join('');
-
-            let footHtml = '<td>必要人数</td>';
-            for (let d = 1; d <= daysInMonth; d++) {
-                footHtml += `<td><input type="number" class="need-count-input" value="3" data-day="${d}"></td>`;
-            }
-            document.getElementById('shiftFoot').innerHTML = `<tr>${footHtml}</tr>`;
-            updateSummary();
-        }
-
-        function setHoliday(day) {
-            const selects = document.querySelectorAll(`.shift-select[data-day="${day}"]`);
-            selects.forEach(s => s.value = "公休");
-            const needInput = document.querySelector(`.need-count-input[data-day="${day}"]`);
-            if(needInput) needInput.value = 0;
-            updateSummary();
-        }
-
-        function autoFillShift() {
-            const selects = document.querySelectorAll('.shift-select');
-            const needInputs = document.querySelectorAll('.need-count-input');
-            const daysInMonth = needInputs.length;
-
-            let finalGrid = null;
-            for (let t = 0; t < 1000; t++) {
-                let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
-                    let val = Array.from(selects).find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d + 1).value;
-                    return (val !== "" && val !== "出勤") ? val : "";
-                }));
-
-                // 1. 有給の不足分を配置
-                grid.forEach((row, sIdx) => {
-                    let needed = staffs[sIdx].paidDays - row.filter(v => v === "有給").length;
-                    let emptyIdx = row.map((v, i) => v === "" ? i : -1).filter(i => i !== -1);
-                    for (let i = 0; i < needed && emptyIdx.length > 0; i++) {
-                        let r = Math.floor(Math.random() * emptyIdx.length);
-                        row[emptyIdx[r]] = "有給";
-                        emptyIdx.splice(r, 1);
-                    }
-                });
-
-                // 2. 出勤配置 (4連勤制限・非常勤10日制限)
-                let fail = false;
-                for (let d = 0; d < daysInMonth; d++) {
-                    const dailyNeed = parseInt(needInputs[d].value) || 0;
-                    let candidates = staffs.map((_, i) => i).filter(sIdx => {
-                        if (grid[sIdx][d] !== "") return false;
-                        let streak = 0;
-                        for (let i = d - 1; i >= 0 && grid[sIdx][i] === "出勤"; i--) streak++;
-                        if (streak >= 3) return false; // 4連勤制限
-                        if (staffs[sIdx].type === 'part' && grid[sIdx].filter(v => v === "出勤").length >= 10) return false; // 非常勤10日制限
-                        return true;
-                    }).sort(() => Math.random() - 0.5);
-
-                    for (let sIdx of candidates) {
-                        if (grid.filter(row => row[d] === "出勤").length >= dailyNeed) break;
-                        grid[sIdx][d] = "出勤";
-                    }
-                    if (grid.filter(row => row[d] === "出勤").length < dailyNeed) { fail = true; break; }
-                }
-                if (fail) continue;
-
-                // 3. 常勤休み9日調整
-                let adjFail = false;
-                grid.forEach((row, sIdx) => {
-                    row.forEach((v, i) => { if(v==="") row[i] = "公休"; });
-                    if (staffs[sIdx].type !== 'full') return;
-                    let getOffs = () => row.filter(v => v === "公休" || v === "希望休");
-                    while (getOffs().length < 9) {
-                        let w = row.map((v, i) => v === "出勤" ? i : -1).filter(i => i !== -1);
-                        if (w.length === 0) { adjFail = true; break; }
-                        row[w[0]] = "公休";
-                    }
-                    while (getOffs().length > 9) {
-                        let o = row.map((v, i) => v === "公休" ? i : -1).filter(i => i !== -1);
-                        let target = o.find(idx => {
-                            let s = 0; for(let j=idx-1; j>=0 && row[j]==="出勤"; j--) s++;
-                            let ps = 0; for(let j=idx+1; j<daysInMonth && row[j]==="出勤"; j++) ps++;
-                            return (s + ps) < 3;
-                        });
-                        if (target !== undefined) row[target] = "出勤"; else { adjFail = true; break; }
-                    }
-                });
-                if (!adjFail) { finalGrid = grid; break; }
-            }
-
-            if (finalGrid) {
-                selects.forEach(sel => { sel.value = finalGrid[sel.dataset.staff][sel.dataset.day - 1]; });
-                updateSummary();
-                alert("条件をすべて満たして生成しました。");
-            } else {
-                alert("条件に合うパターンが見つかりませんでした。スタッフを増やすか、必要人数を減らしてください。");
-            }
-        }
-
-        function updateSummary() {
-            const list = document.getElementById('summaryList');
-            const selects = document.querySelectorAll('.shift-select');
-            list.innerHTML = staffs.map((s, idx) => {
-                const mySels = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
-                const c = { "出勤":0, "公休":0, "希望休":0, "有給":0 };
-                mySels.forEach(sel => { if(c.hasOwnProperty(sel.value)) c[sel.value]++; });
-                return `<div class="summary-row"><strong>${s.name}</strong> (${s.type==='full'?'常勤':'非常勤'})<br>出勤:${c["出勤"]}回 / 有給:${c["有給"]}日 / 休み:${c["公休"]+c["希望休"]}日</div>`;
-            }).join('');
-        }
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>
