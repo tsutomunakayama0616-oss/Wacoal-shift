@@ -3,18 +3,23 @@ body { font-family: "Helvetica Neue", Arial, sans-serif; background: #f4f7f6; ma
 h1 { color: #333; text-align: center; }
 
 .config-section { display: flex; gap: 40px; margin-bottom: 20px; padding: 15px; background: #fafafa; border-radius: 5px; }
+.guide { margin-bottom: 15px; padding: 10px; background: #e8f5e9; border-left: 5px solid #4caf50; font-size: 0.9em; line-height: 1.6; }
+
 .staff-item { margin-bottom: 8px; display: flex; gap: 10px; align-items: center; }
 .paid-input { width: 40px; }
 
 .table-wrapper { overflow-x: auto; margin-top: 20px; }
 table { border-collapse: collapse; width: 100%; font-size: 14px; }
-th, td { border: 1px solid #ddd; padding: 8px; text-align: center; min-width: 40px; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: center; min-width: 45px; }
 
 th { background: #eee; }
-.sat { background-color: #e3f2fd !important; } /* 薄いブルー */
-.sun { background-color: #fff3e0 !important; } /* 薄いオレンジ */
+.sat { background-color: #e3f2fd !important; } 
+.sun { background-color: #fff3e0 !important; } 
 
-select { border: 1px solid #ccc; border-radius: 3px; padding: 2px; }
-.btn-generate { background: #4caf50; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+.need-count-input { width: 30px; text-align: center; border: 1px solid #4caf50; border-radius: 3px; font-weight: bold; }
+tfoot td { background: #f1f8e9; font-weight: bold; }
+
+select { border: 1px solid #ccc; border-radius: 3px; padding: 2px; width: 100%; }
+.btn-generate { background: #4caf50; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 1.1em; }
 .btn-generate:hover { background: #45a049; }
 .remove-btn { background: #ff5252; color: white; border: none; border-radius: 3px; cursor: pointer; }
