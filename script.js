@@ -197,13 +197,12 @@ function autoFillShift() {
             }
         });
 
-        // 【修正：最終人数チェックおよび超過分調整】
+        // 【最終人数チェックおよび補充ロジック】
         for (let d = 0; d < daysInMonth; d++) {
             let target = dailyTargets[d];
             let workers = staffs.map((_, i) => i).filter(sIdx => grid[sIdx][d] === "出勤");
 
             if (target === 3) {
-                // 3人目標は2〜3人であればOK
                 if (!(workers.length === 2 || workers.length === 3)) {
                     success = false;
                     break;
@@ -211,13 +210,26 @@ function autoFillShift() {
                 continue;
             }
 
-            // 多すぎる場合 → 減らす（ランダムにポップ）
+            // 多すぎる場合 → 減らす
             while (workers.length > target) {
                 let idx = workers.pop();
                 grid[idx][d] = "公休";
             }
 
-            // 少なすぎる場合 → 失敗
+            // 【修正箇所】少なすぎる場合 → 補充する
+            if (workers.length < target) {
+                let candidates = staffs.map((_, i) => i).filter(sIdx => {
+                    return grid[sIdx][d] === "公休"; // 公休から戻す
+                });
+
+                while (workers.length < target && candidates.length > 0) {
+                    let idx = candidates.pop();
+                    grid[idx][d] = "出勤";
+                    workers.push(idx);
+                }
+            }
+
+            // それでも足りなければ失敗
             if (workers.length < target) {
                 success = false;
                 break;
