@@ -24,10 +24,6 @@ function resetShift() {
     updateSummary();
 }
 
-/**
- * 連勤チェック（厳格版）
- * 指定日に「出勤」を入れた場合、前後の合計がlimitを超えないか
- */
 function canWork(grid, sIdx, dIdx, limit) {
     let row = grid[sIdx];
     let prev = 0;
@@ -42,7 +38,7 @@ function canWork(grid, sIdx, dIdx, limit) {
 }
 
 /**
- * 自動生成ロジック（厳守モード）
+ * 自動生成ロジック
  */
 function autoFillShift() {
     const selects = Array.from(document.querySelectorAll('.shift-select'));
@@ -58,103 +54,94 @@ function autoFillShift() {
         });
     });
 
-    // 2. 目標人数の確保（全日程を1日ずつ回る）
-    // 人数が足りない日に、連勤条件をクリアするスタッフを優先的に割り当て
+    // 2. 目標人数の確保（非常勤は10回まで）
     for (let d = 0; d < daysInMonth; d++) {
         let safety = 0;
         while (countWorkers(grid, d) < dailyTargets[d] && safety < 100) {
-            // まだこの日に割り当てられておらず、かつ連勤制限を守れるスタッフを探す
             let candidates = staffs.map((_, i) => i).filter(sIdx => {
                 if (grid[sIdx][d] !== "") return false;
                 let limit = staffs[sIdx].type === 'full' ? 4 : 2;
+                
+                // 非常勤は10回を超えないようにガード
+                if (staffs[sIdx].type === 'part' && countStaffWorkDays(grid[sIdx]) >= 10) return false;
+                
                 return canWork(grid, sIdx, d, limit);
             });
 
             if (candidates.length === 0) break;
-
-            // 出勤日数がまだ少ないスタッフを優先
             candidates.sort((a, b) => countStaffWorkDays(grid[a]) - countStaffWorkDays(grid[b]));
             grid[candidates[0]][d] = "出勤";
             safety++;
         }
     }
 
-    // 3. 常勤スタッフの「公休9日」の帳尻合わせ
-    // ステップ2で出勤が足りなかった場合、連勤を守りつつ出勤を増やす
+    // 3. 帳尻合わせ（常勤9休・非常勤10出）
     staffs.forEach((staff, sIdx) => {
+        let safety = 0;
         if (staff.type === 'full') {
-            let safety = 0;
+            // 常勤：休みが9日を超えるなら出勤を増やす
             while (countStaffOffDays(grid[sIdx]) > 9 && safety < 100) {
-                // 休みすぎているので、出勤に変えられる日を探す
                 let offDays = grid[sIdx].map((v, i) => v === "" || v === "公休" ? i : -1).filter(i => i !== -1);
                 offDays.sort(() => Math.random() - 0.5);
-                
                 let targetDay = offDays.find(d => canWork(grid, sIdx, d, 4));
-                if (targetDay !== undefined) {
-                    grid[sIdx][targetDay] = "出勤";
-                } else {
-                    break; // どこに入れても連勤違反になる場合は終了
-                }
+                if (targetDay !== undefined) { grid[sIdx][targetDay] = "出勤"; } else { break; }
+                safety++;
+            }
+        } else {
+            // 非常勤：出勤が10回未満なら出勤を増やす
+            while (countStaffWorkDays(grid[sIdx]) < 10 && safety < 100) {
+                let offDays = grid[sIdx].map((v, i) => v === "" || v === "公休" ? i : -1).filter(i => i !== -1);
+                offDays.sort(() => Math.random() - 0.5);
+                let targetDay = offDays.find(d => canWork(grid, sIdx, d, 2));
+                if (targetDay !== undefined) { grid[sIdx][targetDay] = "出勤"; } else { break; }
                 safety++;
             }
         }
     });
 
-    // 4. 空白をすべて「公休」で埋める
+    // 4. 空白を「公休」で埋める
     for (let s = 0; s < staffs.length; s++) {
         for (let d = 0; d < daysInMonth; d++) {
             if (grid[s][d] === "") grid[s][d] = "公休";
         }
     }
 
-    // 5. 最終チェックと反映
+    // 反映
     selects.forEach(sel => {
-        const sIdx = parseInt(sel.dataset.staff);
-        const dIdx = parseInt(sel.dataset.day) - 1;
-        sel.value = grid[sIdx][dIdx];
+        sel.value = grid[parseInt(sel.dataset.staff)][parseInt(sel.dataset.day) - 1];
     });
 
     updateSummary();
     checkViolations(grid, dailyTargets);
 }
 
-// 補助関数
-function countWorkers(grid, day) {
-    return grid.filter(row => row[day] === "出勤").length;
-}
-function countStaffWorkDays(row) {
-    return row.filter(v => v === "出勤").length;
-}
-function countStaffOffDays(row) {
-    return row.filter(v => v === "" || v === "公休" || v === "希望休" || v === "有給").length;
-}
+function countWorkers(grid, day) { return grid.filter(row => row[day] === "出勤").length; }
+function countStaffWorkDays(row) { return row.filter(v => v === "出勤").length; }
+function countStaffOffDays(row) { return row.filter(v => v === "" || v === "公休" || v === "希望休" || v === "有給").length; }
 
-/**
- * 違反チェックアラート
- */
 function checkViolations(grid, targets) {
     let messages = [];
-    // 人数チェック
     for (let d = 0; d < targets.length; d++) {
         let actual = countWorkers(grid, d);
-        if (actual < targets[d]) messages.push(`${d+1}日: 必要人数に${targets[d] - actual}名不足`);
+        if (actual < targets[d]) messages.push(`${d+1}日: 人数不足（目標${targets[d]}名）`);
     }
-    // 常勤の休みチェック
     staffs.forEach((s, i) => {
         if (s.type === 'full') {
             let offs = countStaffOffDays(grid[i]);
             if (offs !== 9) messages.push(`${s.name}: 休みが${offs}日（9日必要）`);
+        } else {
+            let works = countStaffWorkDays(grid[i]);
+            if (works !== 10) messages.push(`${s.name}: 出勤が${works}回（10回必要）`);
         }
     });
 
     if (messages.length > 0) {
-        alert("【警告】一部の条件を満たせませんでした。手動調整が必要です：\n\n" + messages.slice(0, 5).join("\n"));
+        alert("【条件未達成】\n" + messages.slice(0, 5).join("\n"));
     } else {
-        alert("すべての条件（必要人数・連勤制限・公休日数）をクリアしました！");
+        alert("すべての条件をクリアしました！");
     }
 }
 
-// UI補助
 function renderStaffList() {
     const list = document.getElementById('staffList');
     if (!list) return;
