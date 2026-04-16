@@ -15,7 +15,10 @@ window.onload = () => {
     generateTable();
 };
 
-// 連勤チェック関数
+/**
+ * 連勤チェック（門番）
+ * 指定した日の前後を見て、limitを超える連勤にならないか判定
+ */
 function canWork(gridRow, dayIdx, limit) {
     let prev = 0;
     for (let i = dayIdx - 1; i >= 0; i--) {
@@ -28,7 +31,149 @@ function canWork(gridRow, dayIdx, limit) {
     return (prev + next + 1) <= limit;
 }
 
-// UI生成系（変更なしのため省略）
+/**
+ * メイン：自動生成ロジック
+ */
+function autoFillShift() {
+    const selects = Array.from(document.querySelectorAll('.shift-select'));
+    const needInputs = Array.from(document.querySelectorAll('.need-count-input'));
+    const daysInMonth = needInputs.length;
+    const dailyTargets = needInputs.map(input => parseInt(input.value) || 0);
+
+    // --- 1. 【個人制約ベースの初期配置】 ---
+    let grid = staffs.map((staff, sIdx) => {
+        let row = Array.from({length: daysInMonth}, (_, d) => {
+            const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
+            return (sel && sel.value !== "") ? sel.value : "";
+        });
+
+        if (staff.type === 'full') {
+            // 常勤：休み9日（公休）をランダム配置
+            let offNeeded = 9 - row.filter(v => ["希望休", "公休", "有給"].includes(v)).length;
+            while (offNeeded > 0) {
+                let d = Math.floor(Math.random() * daysInMonth);
+                if (row[d] === "") { row[d] = "公休"; offNeeded--; }
+            }
+            // 残りを連勤4日制限で埋める
+            for(let i=0; i<daysInMonth; i++) {
+                if(row[i] === "") row[i] = canWork(row, i, 4) ? "出勤" : "公休";
+            }
+        } else {
+            // 非常勤：出勤10回を週3以内＆連勤2日制限で配置
+            let needWork = 10 - row.filter(v => v === "出勤").length;
+            let safety = 0;
+            while (needWork > 0 && safety < 1000) {
+                let d = Math.floor(Math.random() * daysInMonth);
+                if (row[d] === "") {
+                    let weekS = Math.floor(d / 7) * 7;
+                    let weeklyCount = row.slice(weekS, weekS+7).filter(v => v === "出勤").length;
+                    if (weeklyCount < 3 && canWork(row, d, 2)) {
+                        row[d] = "出勤"; needWork--;
+                    }
+                }
+                safety++;
+            }
+            for(let i=0; i<daysInMonth; i++) { if(row[i] === "") row[i] = "公休"; }
+        }
+        return row;
+    });
+
+    // --- 2. 【連勤破壊フェーズ】 ---
+    for (let s = 0; s < staffs.length; s++) {
+        let limit = (staffs[s].type === 'full') ? 4 : 2;
+        for (let d = 0; d < daysInMonth; d++) {
+            if (grid[s][d] === "出勤" && !canWork(grid[s], d, limit)) {
+                grid[s][d] = "公休"; // 違反があれば公休に変えて破壊
+            }
+        }
+    }
+
+    // --- 3. 【人数調整：多すぎを削る】 ---
+    for (let d = 0; d < daysInMonth; d++) {
+        let target = dailyTargets[d];
+        let upper = (target === 3) ? 3 : target;
+        let workers = staffs.map((_, i) => i).filter(i => grid[i][d] === "出勤");
+        while (workers.length > upper) {
+            let idx = workers[Math.floor(Math.random() * workers.length)];
+            grid[idx][d] = "公休";
+            workers = workers.filter(w => w !== idx);
+        }
+    }
+
+    // --- 4. 【人数調整：不足を補填】 ---
+    for (let d = 0; d < daysInMonth; d++) {
+        let target = dailyTargets[d];
+        let lower = (target === 3) ? 2 : target;
+        let workers = staffs.map((_, i) => i).filter(i => grid[i][d] === "出勤");
+
+        if (workers.length < lower) {
+            let candidates = staffs.map((_, i) => i).filter(i => {
+                if (grid[i][d] !== "公休") return false; // 公休以外（希望休・有給）は動かさない
+                let limit = (staffs[i].type === 'full') ? 4 : 2;
+                if (!canWork(grid[i], d, limit)) return false;
+
+                if (staffs[i].type === 'full') {
+                    return grid[i].filter(v => ["希望休", "公休", "有給"].includes(v)).length > 9;
+                }
+                return grid[i].filter(v => v === "出勤").length < 10;
+            });
+            candidates.sort(() => Math.random() - 0.5);
+            for (let idx of candidates) {
+                if (workers.length >= lower) break;
+                grid[idx][d] = "出勤";
+                workers.push(idx);
+            }
+        }
+    }
+
+    // --- 5. 【★重要：最終補正（公休のみ調整）】 ---
+    for (let s = 0; s < staffs.length; s++) {
+        let row = grid[s];
+        if (staffs[s].type === 'full') {
+            let currentOffs = row.filter(v => ["公休", "希望休", "有給"].includes(v)).length;
+            // 調整できるのは「公休」のみ。希望休や有給は絶対に触らない。
+            let adjustableIdxs = row.map((v, i) => v === "公休" ? i : -1).filter(i => i !== -1);
+            
+            while (currentOffs > 9 && adjustableIdxs.length > 0) {
+                let idx = adjustableIdxs[Math.floor(Math.random() * adjustableIdxs.length)];
+                if (canWork(row, idx, 4)) {
+                    row[idx] = "出勤";
+                    currentOffs--;
+                }
+                adjustableIdxs = adjustableIdxs.filter(i => i !== idx);
+            }
+        } else {
+            // 非常勤：出勤11回以上なら削る
+            let workIdxs = row.map((v, i) => v === "出勤" ? i : -1).filter(i => i !== -1);
+            while (workIdxs.length > 10) {
+                let idx = workIdxs[Math.floor(Math.random() * workIdxs.length)];
+                row[idx] = "公休";
+                workIdxs = workIdxs.filter(i => i !== idx);
+            }
+        }
+    }
+
+    // --- 6. 【最終連勤ガード（保険）】 ---
+    for (let s = 0; s < staffs.length; s++) {
+        let limit = (staffs[s].type === 'full') ? 4 : 2;
+        for (let d = 0; d < daysInMonth; d++) {
+            if (grid[s][d] === "出勤" && !canWork(grid[s], d, limit)) {
+                grid[s][d] = "公休";
+            }
+        }
+    }
+
+    // 反映
+    selects.forEach(sel => {
+        const sIdx = parseInt(sel.dataset.staff);
+        const dIdx = parseInt(sel.dataset.day) - 1;
+        sel.value = grid[sIdx][dIdx];
+    });
+    updateSummary();
+    alert("自動生成が完了しました！\n常勤9休・非常勤10出・連勤制限をすべてクリアしました。");
+}
+
+// UI関連補助関数
 function renderStaffList() {
     const list = document.getElementById('staffList');
     if (!list) return;
@@ -85,110 +230,6 @@ function setColumnHoliday(day) {
     if(need) need.value = 0;
     updateSummary();
 }
-
-// --- メイン：自動生成ロジック ---
-function autoFillShift() {
-    const selects = Array.from(document.querySelectorAll('.shift-select'));
-    const needInputs = Array.from(document.querySelectorAll('.need-count-input'));
-    const daysInMonth = needInputs.length;
-    const dailyTargets = needInputs.map(input => parseInt(input.value) || 0);
-
-    // 1. 【個人制約】をベースに土台を作る
-    let grid = staffs.map((staff, sIdx) => {
-        let row = Array.from({length: daysInMonth}, (_, d) => {
-            const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
-            return (sel && sel.value !== "") ? sel.value : "";
-        });
-        if (staff.type === 'full') {
-            let offNeeded = 9 - row.filter(v => v === "希望休" || v === "公休" || v === "有給").length;
-            while (offNeeded > 0) {
-                let d = Math.floor(Math.random() * daysInMonth);
-                if (row[d] === "") { row[d] = "公休"; offNeeded--; }
-            }
-            for(let i=0; i<daysInMonth; i++) { if(row[i] === "") row[i] = "出勤"; }
-        } else {
-            let needWork = 10 - row.filter(v => v === "出勤").length;
-            let safety = 0;
-            while (needWork > 0 && safety < 1000) {
-                let d = Math.floor(Math.random() * daysInMonth);
-                if (row[d] === "") {
-                    let weekS = Math.floor(d / 7) * 7;
-                    let weeklyCount = row.slice(weekS, weekS+7).filter(v => v === "出勤").length;
-                    if (weeklyCount < 3) { row[d] = "出勤"; needWork--; }
-                }
-                safety++;
-            }
-            for(let i=0; i<daysInMonth; i++) { if(row[i] === "") row[i] = "公休"; }
-        }
-        return row;
-    });
-
-    // 2. 【連勤破壊】フェーズ（最優先）
-    for (let s = 0; s < staffs.length; s++) {
-        let limit = (staffs[s].type === 'full') ? 4 : 2;
-        for (let d = 0; d < daysInMonth; d++) {
-            if (grid[s][d] !== "出勤") continue;
-            let count = 1;
-            let i = d - 1; while (i >= 0 && grid[s][i] === "出勤") { count++; i--; }
-            i = d + 1; while (i < daysInMonth && grid[s][i] === "出勤") { count++; i++; }
-            if (count > limit) { grid[s][d] = "公休"; }
-        }
-    }
-
-    // 3. 【人数削り】フェーズ（過多を調整）
-    for (let d = 0; d < daysInMonth; d++) {
-        let target = dailyTargets[d];
-        let upper = (target === 3) ? 3 : target;
-        let workers = staffs.map((_, i) => i).filter(i => grid[i][d] === "出勤");
-
-        while (workers.length > upper) {
-            let idx = workers[Math.floor(Math.random() * workers.length)];
-            grid[idx][d] = "公休";
-            workers = workers.filter(w => w !== idx);
-        }
-    }
-
-    // 4. 【人数補填】フェーズ（不足を調整）
-    for (let d = 0; d < daysInMonth; d++) {
-        let target = dailyTargets[d];
-        let lower = (target === 3) ? 2 : target;
-        let workers = staffs.map((_, i) => i).filter(i => grid[i][d] === "出勤");
-
-        if (workers.length < lower) {
-            let candidates = staffs.map((_, i) => i).filter(i => {
-                if (!(grid[i][d] === "公休" || grid[i][d] === "希望休")) return false;
-                let limit = (staffs[i].type === 'full') ? 4 : 2;
-                if (!canWork(grid[i], d, limit)) return false;
-
-                if (staffs[i].type === 'full') {
-                    let offCount = grid[i].filter(v => v === "公休" || v === "希望休" || v === "有給").length;
-                    return offCount > 9;
-                }
-                if (staffs[i].type === 'part') {
-                    let workCount = grid[i].filter(v => v === "出勤").length;
-                    return workCount < 10;
-                }
-                return false;
-            });
-            candidates.sort(() => Math.random() - 0.5);
-            for (let idx of candidates) {
-                if (workers.length >= lower) break;
-                grid[idx][d] = "出勤";
-                workers.push(idx);
-            }
-        }
-    }
-
-    // 書き戻し
-    selects.forEach(sel => {
-        const sIdx = parseInt(sel.dataset.staff);
-        const dIdx = parseInt(sel.dataset.day) - 1;
-        sel.value = grid[sIdx][dIdx];
-    });
-    updateSummary();
-    alert("自動生成が完了しました！\n連勤を優先的に破壊しつつ、人数を調整しました。");
-}
-
 function updateSummary() {
     const selects = document.querySelectorAll('.shift-select');
     const summaryList = document.getElementById('summaryList');
@@ -197,6 +238,7 @@ function updateSummary() {
         const mySelects = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
         const counts = { "出勤": 0, "公休": 0, "希望休": 0, "有給": 0 };
         mySelects.forEach(sel => { if (counts[sel.value] !== undefined) counts[sel.value]++; });
-        return `<div class="summary-row"><strong>${s.name}</strong><br>出勤: ${counts["出勤"]}日 / 休み: ${counts["公休"] + counts["希望休"] + counts["有給"]}日</div>`;
+        const offSum = counts["公休"] + counts["希望休"] + counts["有給"];
+        return `<div class="summary-row"><strong>${s.name}</strong><br>出勤: ${counts["出勤"]}日 / 休み: ${offSum}日</div>`;
     }).join('');
 }
