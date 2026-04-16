@@ -86,169 +86,99 @@ function autoFillShift() {
     const daysInMonth = needInputs.length;
     const monthInput = document.getElementById('targetMonth');
     const [year, month] = monthInput.value.split('-').map(Number);
+    const dailyTargets = needInputs.map(input => parseInt(input.value) || 0);
 
-    for (let attempt = 0; attempt < 50; attempt++) {
+    for (let attempt = 0; attempt < 200; attempt++) {
         let success = true;
-        let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
-            const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
-            return (sel && sel.value !== "" && sel.value !== "出勤") ? sel.value : "";
-        }));
-
-        staffs.forEach((s, sIdx) => {
-            let needed = s.paidDays - grid[sIdx].filter(v => v === "有給").length;
-            for(let i=0; i<500 && needed > 0; i++) {
-                let d = Math.floor(Math.random() * daysInMonth);
-                if (grid[sIdx][d] === "") { grid[sIdx][d] = "有給"; needed--; }
-            }
-        });
-
-        let dailyTargets = needInputs.map(input => parseInt(input.value) || 0);
-
-        for (let d = 0; d < daysInMonth; d++) {
-            let target = dailyTargets[d];
-            if (target === 0) {
-                grid.forEach(row => { if(row[d] === "") row[d] = "公休"; });
-                continue;
-            }
-
-            let candidates = staffs.map((_, i) => i).filter(sIdx => {
-                if (grid[sIdx][d] !== "") return false;
-                let sPrev = 0; for (let i=d-1; i>=0; i--) { if(grid[sIdx][i]==="出勤") sPrev++; else break; }
-                let sNext = 0; for (let i=d+1; i<daysInMonth; i++) { if(grid[sIdx][i]==="出勤") sNext++; else break; }
-                if (sPrev + sNext >= 4) return false;
-
-                if (staffs[sIdx].type === 'part') {
-                    let weekStart = Math.floor(d / 7) * 7;
-                    let weekEnd = Math.min(weekStart + 7, daysInMonth);
-                    let weeklyCount = grid[sIdx].slice(weekStart, weekEnd).filter(v => v === "出勤" || v === "有給").length;
-                    if (weeklyCount >= 3) return false;
-                }
-                return true;
+        
+        // 1. 各スタッフの「休みの日数」を最初に確定（常勤9日・非常勤出勤10日以外）
+        let grid = staffs.map((staff, sIdx) => {
+            let row = Array.from({length: daysInMonth}, (_, d) => {
+                const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
+                return (sel && (sel.value === "希望休" || sel.value === "公休" || sel.value === "有給")) ? sel.value : "";
             });
+            
+            let isFull = (staff.type === 'full');
+            let targetOffCount = isFull ? 9 : (daysInMonth - 10);
+            let currentOff = row.filter(v => v === "希望休" || v === "公休").length;
 
-            candidates.sort((a, b) => {
-                const sundayCount = (idx) =>
-                    grid[idx].filter((v, i) => {
-                        let date = new Date(year, month - 1, i + 1);
-                        return date.getDay() === 0 && v === "出勤";
-                    }).length;
-                return sundayCount(a) - sundayCount(b) + (Math.random() - 0.5);
-            });
-
-            let assigned = grid.filter(row => row[d] === "出勤").length;
-            for (let sIdx of candidates) {
-                if (assigned >= target) break;
-                grid[sIdx][d] = "出勤";
-                assigned++;
-            }
-
-            let minAllowed = (target === 3) ? 2 : target;
-            if (assigned < minAllowed) { success = false; break; }
-        }
-
-        if (!success) continue;
-
-        grid.forEach((row, sIdx) => {
-            let isFull = (staffs[sIdx].type === 'full');
-            let targetOff = isFull ? 9 : (daysInMonth - 10);
-
-            for (let i = 0; i < daysInMonth; i++) {
-                if (row[i] === "") {
-                    let sP = 0; for (let j=i-1; j>=0; j--) { if(row[j]==="出勤") sP++; else break; }
-                    let sN = 0; for (let j=i+1; j<daysInMonth; j++) { if(row[j]==="出勤") sN++; else break; }
-                    
-                    let weekStart = Math.floor(i / 7) * 7;
-                    let weekEnd = weekStart + 7;
-                    let weeklyCount = row.slice(weekStart, weekEnd).filter(v=>"出勤"===v).length;
-
-                    let currentCount = grid.filter(r => r[i] === "出勤").length;
-                    let target = dailyTargets[i];
-                    let limit = isFull ? 4 : 2;
-
-                    if (currentCount < target && sP + sN < limit) {
-                        if (staffs[sIdx].type === 'part' && weeklyCount >= 3) {
-                            row[i] = "公休";
-                        } else {
-                            row[i] = "出勤";
-                        }
-                    } else {
-                        row[i] = "公休";
-                    }
-                }
-            }
-
+            let offNeeded = targetOffCount - currentOff;
             let safety = 0;
-            while (row.filter(v => v === "公休" || v === "希望休").length < targetOff && safety < 100) {
-                let maxS = 0, bestIdx = -1, cur = 0;
-                for(let i=0; i<daysInMonth; i++){
-                    if(row[i]==="出勤"){ cur++; if(cur > maxS){ maxS = cur; bestIdx = i; } }
-                    else cur = 0;
-                }
-                if(bestIdx !== -1) {
-                    if (row[bestIdx] === "出勤") {
-                        let currentCount = grid.filter(r => r[bestIdx] === "出勤").length;
-                        let target = dailyTargets[bestIdx];
-                        if (currentCount > target) {
-                            row[bestIdx] = "公休";
-                        }
-                    }
-                } else break;
+            while (offNeeded > 0 && safety < 500) {
+                let d = Math.floor(Math.random() * daysInMonth);
+                if (row[d] === "") { row[d] = "公休"; offNeeded--; }
                 safety++;
             }
+            // 休み以外の枠をすべて「出勤」として初期化
+            for(let i=0; i<daysInMonth; i++) { if(row[i] === "") row[i] = "出勤"; }
+            return row;
         });
 
-        // 【最終人数チェックおよび補充ロジック】
+        // 2. 制約チェック（連勤・頻度）
+        // ※ここでは「出勤」を維持したまま、ルール違反があればこの回をリセットして再試行する
         for (let d = 0; d < daysInMonth; d++) {
-            let target = dailyTargets[d];
-            let workers = staffs.map((_, i) => i).filter(sIdx => grid[sIdx][d] === "出勤");
+            staffs.forEach((_, sIdx) => {
+                if (grid[sIdx][d] !== "出勤") return;
 
-            if (target === 3) {
-                if (!(workers.length === 2 || workers.length === 3)) {
-                    success = false;
-                    break;
+                // 連勤制限（常勤4/非常勤2）
+                let sP = 0; for (let i=d-1; i>=0; i--) { if(grid[sIdx][i]==="出勤") sP++; else break; }
+                let sN = 0; for (let i=d+1; i<daysInMonth; i++) { if(grid[sIdx][i]==="出勤") sN++; else break; }
+                let limit = (staffs[sIdx].type === 'full') ? 4 : 2;
+
+                // 非常勤週制限（週3まで）
+                let weekS = Math.floor(d / 7) * 7;
+                let weeklyCount = grid[sIdx].slice(weekS, weekS+7).filter(v => v === "出勤").length;
+
+                if (sP + sN >= limit || (staffs[sIdx].type === 'part' && weeklyCount > 3)) {
+                    success = false; 
                 }
-                continue;
-            }
-
-            // 多すぎる場合 → 減らす
-            while (workers.length > target) {
-                let idx = workers.pop();
-                grid[idx][d] = "公休";
-            }
-
-            // 【修正箇所】少なすぎる場合 → 補充する
-            if (workers.length < target) {
-                let candidates = staffs.map((_, i) => i).filter(sIdx => {
-                    return grid[sIdx][d] === "公休"; // 公休から戻す
-                });
-
-                while (workers.length < target && candidates.length > 0) {
-                    let idx = candidates.pop();
-                    grid[idx][d] = "出勤";
-                    workers.push(idx);
-                }
-            }
-
-            // それでも足りなければ失敗
-            if (workers.length < target) {
-                success = false;
-                break;
-            }
+            });
+            if (!success) break;
         }
-
         if (!success) continue;
 
+        // 3. 人員調整（3人を2人にする緩和ルール適用）
+        for (let d = 0; d < daysInMonth; d++) {
+            let count = grid.filter(row => row[d] === "出勤").length;
+            let target = dailyTargets[d];
+
+            if (target === 3) {
+                // 3人目標時は2人または3人であればOK
+                if (!(count === 2 || count === 3)) { success = false; break; }
+            } else {
+                // それ以外の目標人数は厳密にチェック
+                if (count !== target) { success = false; break; }
+            }
+        }
+        if (!success) continue;
+
+        // 4. 休日数（9日等）の最終厳守チェック
+        staffs.forEach((s, i) => {
+            let totalOff = grid[i].filter(v => v === "公休" || v === "希望休").length;
+            let targetOff = (s.type === 'full') ? 9 : (daysInMonth - 10);
+            if (totalOff !== targetOff) success = false;
+        });
+        if (!success) continue;
+
+        // 5. 日曜出勤の公平性（簡易チェック：特定の人に偏りすぎていないか）
+        // ※この attempt ループを繰り返すことで、偏りの少ないパターンが選ばれる
+        let sunCounts = staffs.map((_, sIdx) => 
+            grid[sIdx].filter((v, i) => new Date(year, month - 1, i + 1).getDay() === 0 && v === "出勤").length
+        );
+        if (Math.max(...sunCounts) - Math.min(...sunCounts) > 2) { success = false; continue; }
+
+        // すべてのチェックを通過
         selects.forEach(sel => {
             const sIdx = parseInt(sel.dataset.staff);
             const dIdx = parseInt(sel.dataset.day) - 1;
             sel.value = grid[sIdx][dIdx];
         });
         updateSummary();
-        alert(`自動生成が完了しました（試行回数: ${attempt + 1}回）`);
+        alert(`自動生成完了！（試行: ${attempt + 1}回）\n休日数厳守・人員調整（3→2）ルール適用済み`);
         return;
     }
 
-    alert("エラー: 50回試行しましたが、条件を満たすシフトが見つかりませんでした。希望休が多すぎるか、人数設定が厳しすぎます。");
+    alert("エラー: 条件（休日数9日厳守・連勤制限・目標人数）をすべて満たす配置が見つかりませんでした。希望休を減らすか、人数設定を見直してください。");
 }
 
 function updateSummary() {
@@ -259,6 +189,7 @@ function updateSummary() {
         const my = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
         const c = { "出勤":0, "公休":0, "希望休":0, "有給":0 };
         my.forEach(sel => { if(c[sel.value] !== undefined) c[sel.value]++; });
-        return `<div class="summary-row"><strong>${s.name}</strong><br>出勤: ${c["出勤"]} / 休み: ${c["公休"] + c["希望休"]}日</div>`;
+        let targetOff = (s.type === 'full') ? 9 : (new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate() - 10);
+        return `<div class="summary-row"><strong>${s.name}</strong><br>出勤: ${c["出勤"]} / 休み: ${c["公休"] + c["希望休"]}日 (目標:${targetOff}日)</div>`;
     }).join('');
 }
