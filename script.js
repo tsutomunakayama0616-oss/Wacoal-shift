@@ -9,9 +9,7 @@ let staffs = [
 window.onload = () => {
     const now = new Date();
     const monthInput = document.getElementById('targetMonth');
-    if (monthInput) {
-        monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-    }
+    if (monthInput) monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     renderStaffList();
     generateTable();
 };
@@ -41,7 +39,6 @@ function generateTable() {
     const dateVal = document.getElementById('targetMonth').value;
     const [year, month] = dateVal.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
-    
     let dRow = '<th>名前</th>', wRow = '<th>曜</th>', hRow = '<th>定休日</th>';
     for (let d = 1; d <= daysInMonth; d++) {
         const date = new Date(year, month - 1, d);
@@ -54,7 +51,6 @@ function generateTable() {
     document.getElementById('dateRow').innerHTML = dRow;
     document.getElementById('dayRow').innerHTML = wRow;
     document.getElementById('holidayRow').innerHTML = hRow;
-
     document.getElementById('shiftBody').innerHTML = staffs.map((staff, sIdx) => {
         let cells = `<td>${staff.name}</td>`;
         for (let d = 1; d <= daysInMonth; d++) {
@@ -64,7 +60,6 @@ function generateTable() {
         }
         return `<tr>${cells}</tr>`;
     }).join('');
-
     let fRow = '<td>必要人数</td>';
     for (let d = 1; d <= daysInMonth; d++) {
         fRow += `<td><input type="number" class="need-count-input" data-day="${d}" value="3"></td>`;
@@ -86,14 +81,11 @@ function autoFillShift() {
     const dateVal = document.getElementById('targetMonth').value;
     const [year, month] = dateVal.split('-').map(Number);
     const daysInMonth = needInputs.length;
-
     const sundays = [];
-    for (let d = 1; d <= daysInMonth; d++) {
-        if (new Date(year, month - 1, d).getDay() === 0) sundays.push(d - 1);
-    }
+    for (let d = 1; d <= daysInMonth; d++) if (new Date(year, month - 1, d).getDay() === 0) sundays.push(d - 1);
 
     let finalGrid = null;
-    let failureCounts = Array(daysInMonth).fill(0); // 失敗した日付をカウントする用
+    let errorLog = Array(daysInMonth).fill(0).map(() => ({ totalFail: 0, reasons: {} }));
 
     for (let trial = 0; trial < 3000; trial++) {
         let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
@@ -121,8 +113,14 @@ function autoFillShift() {
                     if (grid[sIdx][i] === "出勤" || grid[sIdx][i] === "有給") streak++;
                     else break;
                 }
-                if (streak >= 6) return false;
-                if (staffs[sIdx].type === 'part' && grid[sIdx].filter(v => v === "出勤").length >= 10) return false;
+                if (streak >= 6) {
+                    errorLog[d].reasons["6連勤制限"] = (errorLog[d].reasons["6連勤制限"] || 0) + 1;
+                    return false;
+                }
+                if (staffs[sIdx].type === 'part' && grid[sIdx].filter(v => v === "出勤").length >= 10) {
+                    errorLog[d].reasons["非常勤10日上限"] = (errorLog[d].reasons["非常勤10日上限"] || 0) + 1;
+                    return false;
+                }
                 return true;
             });
 
@@ -142,19 +140,16 @@ function autoFillShift() {
                 if (grid.filter(row => row[d] === "出勤").length >= need) break;
                 grid[sIdx][d] = "出勤";
             }
-            if (grid.filter(row => row[d] === "出勤").length < need) { 
-                failureCounts[d]++; // この日で詰まったことを記録
-                success = false; 
-                break; 
+
+            if (grid.filter(row => row[d] === "出勤").length < need) {
+                errorLog[d].totalFail++;
+                success = false;
+                break;
             }
         }
 
         if (success) {
-            grid.forEach(row => {
-                for (let i = 0; i < row.length; i++) {
-                    if (row[i] === "") row[i] = "公休";
-                }
-            });
+            grid.forEach(row => { for (let i = 0; i < row.length; i++) if (row[i] === "") row[i] = "公休"; });
             finalGrid = grid;
             break;
         }
@@ -167,16 +162,23 @@ function autoFillShift() {
             sel.value = finalGrid[sIdx][dIdx];
         });
         updateSummary();
+        alert("自動生成が完了しました！");
     } else {
-        // 最も失敗が多かった日（＝原因の日）を特定
-        const maxFailDay = failureCounts.indexOf(Math.max(...failureCounts)) + 1;
-        const [y, m] = dateVal.split('-');
-        const failDayOfWeek = ["日","月","火","水","木","金","土"][new Date(y, m-1, maxFailDay).getDay()];
-
+        let worstDayIdx = 0;
+        let maxFails = -1;
+        errorLog.forEach((log, i) => { if(log.totalFail > maxFails) { maxFails = log.totalFail; worstDayIdx = i; } });
+        const failDay = worstDayIdx + 1;
+        const failDayName = ["日","月","火","水","木","金","土"][new Date(year, month - 1, failDay).getDay()];
         selects.forEach(sel => { if (sel.value === "") sel.value = "公休"; });
         updateSummary();
-        
-        alert(`【エラー】条件に合う案が見つかりません。\n\n特に「${maxFailDay}日(${failDayOfWeek})」でスタッフが足りなくなっています。\n\nこの日の必要人数を減らすか、前後の休み設定を調整してください。`);
+        let message = `【シフト作成エラー】\n\n特に「${failDay}日(${failDayName})」でスタッフが足りません。\n`;
+        message += `この日の必要人数を「${parseInt(needInputs[worstDayIdx].value) - 1}人」に減らすと解決する可能性があります。\n\n`;
+        message += `理由の傾向:\n`;
+        const reasons = errorLog[worstDayIdx].reasons;
+        if (Object.keys(reasons).length > 0) {
+            for (let r in reasons) message += `・${r}により出勤不可のスタッフがいます\n`;
+        } else { message += `・休み設定(公休・希望休)が多すぎて出勤できる人がいません\n`; }
+        alert(message);
     }
 }
 
