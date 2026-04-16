@@ -81,8 +81,6 @@ function generateTable() {
     updateSummary();
 }
 
-const isWork = (v) => v === "出勤" || v === "有給" || v === "希望休";
-
 function autoFillShift() {
     const dateVal = document.getElementById('targetMonth').value;
     const [year, month] = dateVal.split('-').map(Number);
@@ -90,7 +88,6 @@ function autoFillShift() {
     const selects = document.querySelectorAll('.shift-select');
     const needInputs = document.querySelectorAll('.need-count-input');
 
-    // データ構造の整理
     let grid = staffs.map((_, sIdx) => {
         return Array.from({length: daysInMonth}, (_, d) => {
             return Array.from(selects).find(sel => parseInt(sel.dataset.staff) === sIdx && parseInt(sel.dataset.day) === d + 1);
@@ -111,10 +108,6 @@ function autoFillShift() {
     for (let d = 0; d < daysInMonth; d++) {
         const need = parseInt(needInputs[d].value) || 0;
         
-        // すでに出勤系が入っている人を数える（出勤はまだないので有給と希望休のみ）
-        let currentWorkers = grid.filter(row => row[d].value === "出勤").length;
-
-        // 候補者をシャッフルして、4連勤にならない人を優先的に割り当て
         let candidates = staffs.map((_, i) => i)
             .filter(sIdx => grid[sIdx][d].value === "")
             .sort(() => Math.random() - 0.5);
@@ -122,16 +115,19 @@ function autoFillShift() {
         for (let sIdx of candidates) {
             if (grid.filter(row => row[d].value === "出勤").length >= need) break;
 
-            // 連勤チェック
+            // 「出勤」のみを対象とした連勤チェック
             let streak = 0;
-            for (let i = d - 1; i >= 0 && isWork(grid[sIdx][i].value); i--) streak++;
+            for (let i = d - 1; i >= 0; i--) {
+                if (grid[sIdx][i].value === "出勤") streak++;
+                else break; // 出勤以外（有給・希含む）があればリセット
+            }
             
             if (streak < 3) {
                 grid[sIdx][d].value = "出勤";
             }
         }
 
-        // それでも足りない場合は、4連勤制限を無視してでも人数を確保
+        // 足りない場合の補充
         if (grid.filter(row => row[d].value === "出勤").length < need) {
             for (let sIdx of candidates) {
                 if (grid.filter(row => row[d].value === "出勤").length >= need) break;
@@ -142,28 +138,25 @@ function autoFillShift() {
 
     // 3. 常勤の休み調整（合計9日）
     grid.forEach((row, sIdx) => {
-        // 空欄をすべて公休に
         row.forEach(sel => { if(sel.value === "") sel.value = "公休"; });
         
         if (staffs[sIdx].type === 'full') {
             const getOffs = () => row.filter(sel => sel.value === "公休" || sel.value === "希望休");
             
-            // 休み不足：出勤を公休に変える
             while (getOffs().length < 9) {
                 let workSels = row.filter(sel => sel.value === "出勤");
                 if (workSels.length === 0) break;
-                // 連勤が長いところを優先
+                // 「出勤」の連勤が長い箇所を優先
                 workSels.sort((a, b) => {
                     let getS = (s) => {
                         let idx = parseInt(s.dataset.day) - 1;
-                        let st = 0; for(let i=idx; i>=0 && isWork(row[i].value); i--) st++;
+                        let st = 0; for(let i=idx; i>=0 && row[i].value === "出勤"; i--) st++;
                         return st;
                     };
                     return getS(b) - getS(a);
                 });
                 workSels[0].value = "公休";
             }
-            // 休みすぎ：公休を出勤に変える
             while (getOffs().length > 9) {
                 let offSel = row.find(sel => sel.value === "公休");
                 if (!offSel) break;
@@ -173,7 +166,7 @@ function autoFillShift() {
     });
 
     updateSummary();
-    alert("生成が完了しました。");
+    alert("生成が完了しました。※「出勤」が4回続くことを制限しています。");
 }
 
 function updateSummary() {
