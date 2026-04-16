@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>シフト作成システム - モバイル最適化版</title>
+    <title>シフト作成システム - 最終確定版</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,10 +11,10 @@
         <h1>シフト作成（最終版）</h1>
         
         <div class="controls">
-            <input type="month" id="targetMonth">
+            <input type="month" id="targetMonth" onchange="generateTable()">
             <div class="btn-group">
-                <button onclick="addStaff()">＋追加</button>
-                <button onclick="autoFillShift()" class="primary-btn">自動生成</button>
+                <button onclick="addStaff()">＋スタッフ追加</button>
+                <button onclick="autoFillShift()" class="primary-btn">自動生成開始</button>
             </div>
         </div>
 
@@ -28,12 +28,13 @@
                         <tr id="dayRow"></tr>
                     </thead>
                     <tbody id="shiftBody"></tbody>
+                    <tfoot id="shiftFoot"></tfoot>
                 </table>
             </div>
         </div>
 
         <div class="summary-panel">
-            <h3>集計確認</h3>
+            <h3>集計確認（自動更新）</h3>
             <div id="summaryList" class="summary-grid"></div>
         </div>
     </div>
