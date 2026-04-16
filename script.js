@@ -38,7 +38,6 @@ function removeStaff(idx) { staffs.splice(idx, 1); renderStaffList(); generateTa
 
 function generateTable() {
     const monthInput = document.getElementById('targetMonth');
-    if (!monthInput) return;
     const [year, month] = monthInput.value.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const defaultNeed = document.getElementById('defaultNeedCount').value;
@@ -85,128 +84,123 @@ function autoFillShift() {
     const selects = Array.from(document.querySelectorAll('.shift-select'));
     const needInputs = Array.from(document.querySelectorAll('.need-count-input'));
     const daysInMonth = needInputs.length;
+    const monthInput = document.getElementById('targetMonth');
+    const [year, month] = monthInput.value.split('-').map(Number);
 
-    let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
-        const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
-        return (sel && (sel.value !== "" && sel.value !== "出勤")) ? sel.value : "";
-    }));
+    for (let attempt = 0; attempt < 50; attempt++) {
+        let success = true;
+        let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
+            const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
+            return (sel && sel.value !== "" && sel.value !== "出勤") ? sel.value : "";
+        }));
 
-    // 有給配置（連勤制限を考慮せず先に散らす）
-    staffs.forEach((s, sIdx) => {
-        let currentPaid = grid[sIdx].filter(v => v === "有給").length;
-        let needed = s.paidDays - currentPaid;
-        let attempts = 0;
-        while (needed > 0 && attempts < 500) {
-            let d = Math.floor(Math.random() * daysInMonth);
-            if (grid[sIdx][d] === "") { grid[sIdx][d] = "有給"; needed--; }
-            attempts++;
-        }
-    });
-
-    let dailyTargets = needInputs.map(input => parseInt(input.value) || 0);
-
-    // メイン割り当てループ
-    for (let d = 0; d < daysInMonth; d++) {
-        let target = dailyTargets[d];
-        if (target === 0) {
-            grid.forEach(row => { if(row[d] === "") row[d] = "公休"; });
-            continue;
-        }
-
-        // 候補者：直近4日が「出勤」なら今日は絶対に出勤させない
-        let candidates = staffs.map((_, i) => i).filter(sIdx => {
-            if (grid[sIdx][d] !== "") return false;
-            let streak = 0;
-            for (let i = d - 1; i >= 0; i--) {
-                if (grid[sIdx][i] === "出勤") streak++;
-                else break; 
+        staffs.forEach((s, sIdx) => {
+            let needed = s.paidDays - grid[sIdx].filter(v => v === "有給").length;
+            for(let i=0; i<500 && needed > 0; i++) {
+                let d = Math.floor(Math.random() * daysInMonth);
+                if (grid[sIdx][d] === "") { grid[sIdx][d] = "有給"; needed--; }
             }
-            return streak < 4; // 4連勤までOK。5連勤目は阻止。
         });
 
-        // 出勤日数が少ない順に並び替え
-        candidates.sort((a, b) => {
-            let countA = grid[a].filter(v => v === "出勤").length;
-            let countB = grid[b].filter(v => v === "出勤").length;
-            return countA - countB + (Math.random() - 0.5);
+        let dailyTargets = needInputs.map(input => parseInt(input.value) || 0);
+
+        for (let d = 0; d < daysInMonth; d++) {
+            let target = dailyTargets[d];
+            if (target === 0) {
+                grid.forEach(row => { if(row[d] === "") row[d] = "公休"; });
+                continue;
+            }
+
+            let candidates = staffs.map((_, i) => i).filter(sIdx => {
+                if (grid[sIdx][d] !== "") return false;
+                let sPrev = 0; for (let i=d-1; i>=0; i--) { if(grid[sIdx][i]==="出勤") sPrev++; else break; }
+                let sNext = 0; for (let i=d+1; i<daysInMonth; i++) { if(grid[sIdx][i]==="出勤") sNext++; else break; }
+                if (sPrev + sNext >= 4) return false;
+
+                if (staffs[sIdx].type === 'part') {
+                    let weekStart = Math.floor(d / 7) * 7;
+                    let weekEnd = Math.min(weekStart + 7, daysInMonth);
+                    let weeklyCount = grid[sIdx].slice(weekStart, weekEnd).filter(v => v === "出勤" || v === "有給").length;
+                    if (weeklyCount >= 3) return false;
+                }
+                return true;
+            });
+
+            candidates.sort((a, b) => {
+                const sundayCount = (idx) =>
+                    grid[idx].filter((v, i) => {
+                        let date = new Date(year, month - 1, i + 1);
+                        return date.getDay() === 0 && v === "出勤";
+                    }).length;
+                return sundayCount(a) - sundayCount(b) + (Math.random() - 0.5);
+            });
+
+            let assigned = grid.filter(row => row[d] === "出勤").length;
+            for (let sIdx of candidates) {
+                if (assigned >= target) break;
+                grid[sIdx][d] = "出勤";
+                assigned++;
+            }
+
+            let minAllowed = (target === 3) ? 2 : target;
+            if (assigned < minAllowed) { success = false; break; }
+        }
+
+        if (!success) continue;
+
+        grid.forEach((row, sIdx) => {
+            let isFull = (staffs[sIdx].type === 'full');
+            let targetOff = isFull ? 9 : (daysInMonth - 10);
+
+            for (let i = 0; i < daysInMonth; i++) {
+                if (row[i] === "") {
+                    let sP = 0; for (let j=i-1; j>=0; j--) { if(row[j]==="出勤") sP++; else break; }
+                    let sN = 0; for (let j=i+1; j<daysInMonth; j++) { if(row[j]==="出勤") sN++; else break; }
+                    
+                    let weekStart = Math.floor(i / 7) * 7;
+                    let weekEnd = weekStart + 7;
+                    let weeklyCount = row.slice(weekStart, weekEnd).filter(v=>"出勤"===v).length;
+
+                    let limit = isFull ? 4 : 2;
+                    if (sP + sN < limit && row.filter(v=>v==="出勤").length < (isFull ? 31 : 10)) {
+                        if (staffs[sIdx].type === 'part' && weeklyCount >= 3) {
+                            row[i] = "公休";
+                        } else {
+                            row[i] = "出勤";
+                        }
+                    } else {
+                        row[i] = "公休";
+                    }
+                }
+            }
+
+            let safety = 0;
+            while (row.filter(v => v === "公休" || v === "希望休").length < targetOff && safety < 100) {
+                let maxS = 0, bestIdx = -1, cur = 0;
+                for(let i=0; i<daysInMonth; i++){
+                    if(row[i]==="出勤"){ cur++; if(cur > maxS){ maxS = cur; bestIdx = i; } }
+                    else cur = 0;
+                }
+                if(bestIdx !== -1) {
+                    if (row[bestIdx] === "出勤") {
+                        row[bestIdx] = "公休";
+                    }
+                } else break;
+                safety++;
+            }
         });
 
-        let assignedCount = grid.filter(row => row[d] === "出勤" || row[d] === "有給").length;
-        for (let sIdx of candidates) {
-            if (assignedCount >= target) break;
-            grid[sIdx][d] = "出勤";
-            assignedCount++;
-        }
-
-        // 人数バリデーション（3人の日は2人でも進む。0, 4, 5人は厳守）
-        let minAllowed = target;
-        if (target === 3) minAllowed = 2; // 3人目標時は2人いれば合格
-
-        if (assignedCount < minAllowed) {
-            alert(`【エラー】${d + 1}日に必要なスタッフを確保できませんでした。\n現在：${assignedCount}名 / 目標：${target}名\n5連勤禁止ルールにより出勤可能な人が不足しています。3人目標の日は2人に減らして調整していますが、それでも足りない状況です。`);
-            return;
-        }
+        selects.forEach(sel => {
+            const sIdx = parseInt(sel.dataset.staff);
+            const dIdx = parseInt(sel.dataset.day) - 1;
+            sel.value = grid[sIdx][dIdx];
+        });
+        updateSummary();
+        alert(`自動生成が完了しました（試行回数: ${attempt + 1}回）`);
+        return;
     }
 
-    // 休日数と連勤の最終調整
-    grid.forEach((row, sIdx) => {
-        let isFull = (staffs[sIdx].type === 'full');
-        let targetOff = isFull ? 9 : (daysInMonth - 10);
-
-        // 1. 空欄を埋める（ここでも連勤を厳密にチェック）
-        for (let i = 0; i < daysInMonth; i++) {
-            if (row[i] === "") {
-                let streakBefore = 0;
-                for (let j = i - 1; j >= 0; j--) { if (row[j] === "出勤") streakBefore++; else break; }
-                
-                // 次の日がすでに出勤で、そこから連勤が続くかも考慮（5連勤阻止の徹底）
-                let streakAfter = 0;
-                for (let j = i + 1; j < daysInMonth; j++) { if (row[j] === "出勤") streakAfter++; else break; }
-
-                if (streakBefore + streakAfter < 4 && row.filter(v=>v==="出勤").length < (isFull ? 31 : 10)) {
-                    row[i] = "出勤";
-                } else {
-                    row[i] = "公休";
-                }
-            }
-        }
-
-        // 2. 休みが足りない場合：連休を作るよりも「連勤を断ち切る場所」を優先して公休に変える
-        let safety = 0;
-        while (row.filter(v => v === "公休" || v === "希望休").length < targetOff && safety < 200) {
-            // 最も連勤が長い箇所を見つけて、その真ん中や端を公休にする
-            let maxStreak = 0;
-            let currentStreak = 0;
-            let bestIdx = -1;
-            
-            for(let i=0; i<daysInMonth; i++) {
-                if(row[i] === "出勤") {
-                    currentStreak++;
-                    if(currentStreak > maxStreak) {
-                        maxStreak = currentStreak;
-                        bestIdx = i;
-                    }
-                } else {
-                    currentStreak = 0;
-                }
-            }
-            if(bestIdx !== -1) {
-                row[bestIdx] = "公休";
-            } else {
-                break;
-            }
-            safety++;
-        }
-    });
-
-    // 画面反映
-    selects.forEach(sel => {
-        const sIdx = parseInt(sel.dataset.staff);
-        const dIdx = parseInt(sel.dataset.day) - 1;
-        sel.value = grid[sIdx][dIdx];
-    });
-    updateSummary();
-    alert("自動生成完了：出勤のみの5連勤を完全に阻止しました。3人目標の日は柔軟に2人へ調整しています。");
+    alert("エラー: 50回試行しましたが、条件を満たすシフトが見つかりませんでした。希望休が多すぎるか、人数設定が厳しすぎます。");
 }
 
 function updateSummary() {
