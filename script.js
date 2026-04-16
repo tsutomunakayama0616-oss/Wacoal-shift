@@ -80,22 +80,19 @@ function autoFillShift() {
     const needInputs = document.querySelectorAll('.need-count-input');
     const daysInMonth = new Date(...document.getElementById('targetMonth').value.split('-')).getDate();
 
-    // 1. データ構造の準備
     let staffData = staffs.map((s, idx) => ({
         config: s,
-        sels: Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx),
-        streak: 0,
-        workDays: 0,
-        offCount: 0
+        sels: Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx)
     }));
 
-    // 2. 初期化：希望休以外を「出勤」にリセットし、有給を先に埋める
+    // [1] 全リセット（希望休以外を一旦「公休」へ）
     staffData.forEach(s => {
-        s.sels.forEach(sel => {
-            if (sel.value !== "希望休") sel.value = "出勤";
-        });
-        // 有給のランダム配置
-        let available = s.sels.filter(sel => sel.value === "出勤");
+        s.sels.forEach(sel => { if(sel.value !== "希望休") sel.value = "公休"; });
+    });
+
+    // [2] 有給をランダム配置
+    staffData.forEach(s => {
+        let available = s.sels.filter(sel => sel.value === "公休");
         for(let i=0; i < s.config.paidDays && available.length > 0; i++){
             let r = Math.floor(Math.random() * available.length);
             available[r].value = "有給";
@@ -103,100 +100,102 @@ function autoFillShift() {
         }
     });
 
-    // 3. 日ごとのメイン処理：引き算方式
+    // [3] 必要出勤人数の確保（最優先）
     for (let d = 0; d < daysInMonth; d++) {
         const need = parseInt(needInputs[d].value);
+        let currentWorkers = staffData.filter(s => s.sels[d].value === "出勤" || s.sels[d].value === "有給" || s.sels[d].value === "希望休");
         
-        // 当日の連勤情報を更新
-        staffData.forEach(s => {
-            const prevVal = d > 0 ? s.sels[d-1].value : "";
-            if (prevVal === "出勤" || prevVal === "有給") {
-                s.streak = s.streak; // 継続
-            } else {
-                s.streak = 0;
-            }
-        });
-
-        // 出勤候補者（出勤・有給）
-        let workers = staffData.filter(s => s.sels[d].value === "出勤" || s.sels[d].value === "有給");
-
-        // 枠に余裕がある場合、以下の優先順位で「公休」を割り当てる
-        // 1. 4連勤になる人（最優先で休ませる）
-        // 2. 非常勤の10日上限に達した人
-        // 3. 公休数がまだ少ない常勤（バランス調整）
-        while (workers.length > need) {
-            let candidates = workers.filter(s => s.sels[d].value === "出勤"); // 有給は削らない
+        while (currentWorkers.length < need) {
+            let candidates = staffData.filter(s => s.sels[d].value === "公休");
             if (candidates.length === 0) break;
 
+            // 優先度：1.非常勤の上限 2.現在の連勤数 3.累積出勤数
             candidates.sort((a, b) => {
-                // A: 4連勤チェック（3連勤の次は優先度高）
-                const aLimit = a.streak >= 3 ? 1 : 0;
-                const bLimit = b.streak >= 3 ? 1 : 0;
-                if (aLimit !== bLimit) return bLimit - aLimit;
+                const aStreak = getStreakBefore(a.sels, d);
+                const bStreak = getStreakBefore(b.sels, d);
+                const aWorkCount = getWorkCountSoFar(a.sels, d);
+                const bWorkCount = getWorkCountSoFar(b.sels, d);
 
-                // B: 非常勤の上限
-                const aPartLimit = (a.config.type === 'part' && a.workDays >= 10) ? 1 : 0;
-                const bPartLimit = (b.config.type === 'part' && b.workDays >= 10) ? 1 : 0;
-                if (aPartLimit !== bPartLimit) return bPartLimit - aPartLimit;
+                const aPartFull = (a.config.type === 'part' && aWorkCount >= 10);
+                const bPartFull = (b.config.type === 'part' && bWorkCount >= 10);
+                if (aPartFull !== bPartFull) return aPartFull ? 1 : -1;
 
-                // C: 公休が9日に達していない常勤を優先
-                const aOffNeed = (a.config.type === 'full' && (a.sels.filter(sel => sel.value === "公休" || sel.value === "希望休").length < 9)) ? 1 : 0;
-                const bOffNeed = (b.config.type === 'full' && (b.sels.filter(sel => sel.value === "公休" || sel.value === "希望休").length < 9)) ? 1 : 0;
-                if (aOffNeed !== bOffNeed) return bOffNeed - aOffNeed;
-
-                // D: 単純な連勤数
-                return b.streak - a.streak;
+                if (aStreak !== bStreak) return aStreak - bStreak;
+                return aWorkCount - bWorkCount;
             });
 
-            // 最も休ませるべき人を公休に
-            candidates[0].sels[d].value = "公休";
-            workers = staffData.filter(s => s.sels[d].value === "出勤" || s.sels[d].value === "有給");
+            candidates[0].sels[d].value = "出勤";
+            currentWorkers = staffData.filter(s => s.sels[d].value === "出勤" || s.sels[d].value === "有給" || s.sels[d].value === "希望休");
         }
-
-        // 確定後の連勤数・出勤数カウント更新
-        staffData.forEach(s => {
-            const val = s.sels[d].value;
-            if (val === "出勤" || val === "有給") {
-                s.streak++;
-                s.workDays++;
-            } else {
-                s.streak = 0;
-                s.offCount++;
-            }
-        });
     }
 
-    // 4. 最終調整：公休9日の死守（必要人数を維持しつつ、出勤日を公休へ）
-    staffData.forEach(s => {
-        let totalOff = s.sels.filter(sel => sel.value === "公休" || sel.value === "希望休").length;
-        if (s.config.type === 'full' && totalOff < 9) {
-            let diff = 9 - totalOff;
-            let workDays = s.sels.map((sel, idx) => ({sel, idx})).filter(item => item.sel.value === "出勤");
-            
-            // 4連勤が発生している箇所を優先的に探して削る
-            workDays.sort((a, b) => {
-                // その日の前後を見て連勤が長い順
-                return getStreakAt(s.sels, b.idx) - getStreakAt(s.sels, a.idx);
+    // [4] 4連勤(3連勤超え)の修正スワップ
+    for (let attempt = 0; attempt < 15; attempt++) {
+        for (let d = 0; d < daysInMonth; d++) {
+            staffData.forEach(s => {
+                if (getStreakBefore(s.sels, d + 1) > 3 && s.sels[d].value === "出勤") {
+                    // 他の交代要員を探す（今日休みで、かつ交代しても連勤ルールを壊さない人）
+                    let substitute = staffData.find(other => 
+                        other.sels[d].value === "公休" && 
+                        getStreakBefore(other.sels, d) < 3 && 
+                        getStreakAfter(other.sels, d, daysInMonth) < 3 &&
+                        !(other.config.type === 'part' && getWorkCountSoFar(other.sels, daysInMonth) >= 10)
+                    );
+                    if (substitute) {
+                        s.sels[d].value = "公休";
+                        substitute.sels[d].value = "出勤";
+                    }
+                }
             });
+        }
+    }
 
-            for(let i=0; i<diff && i<workDays.length; i++) {
-                workDays[i].sel.value = "公休";
-            }
+    // [5] 最終調整：非常勤の上限10日と常勤の公休9日
+    staffData.forEach(s => {
+        let workDaysList = s.sels.filter(sel => sel.value === "出勤" || sel.value === "有給" || sel.value === "希望休");
+        let offTarget = 9;
+
+        // 非常勤：10日超えをカット
+        if (s.config.type === 'part' && workDaysList.length > 10) {
+            let diff = workDaysList.length - 10;
+            let targetSels = s.sels.map((sel, idx) => ({sel, idx})).filter(item => item.sel.value === "出勤");
+            for(let i=0; i<diff && i<targetSels.length; i++) targetSels[i].sel.value = "公休";
+        }
+        
+        // 常勤：公休＋希が9日になるまで調整
+        let currentOffCount = s.sels.filter(sel => sel.value === "公休" || sel.value === "希望休").length;
+        if (s.config.type === 'full' && currentOffCount < offTarget) {
+            let diff = offTarget - currentOffCount;
+            let targetSels = s.sels.map((sel, idx) => ({sel, idx})).filter(item => item.sel.value === "出勤");
+            targetSels.sort((a,b) => getStreakBefore(s.sels, b.idx+1) - getStreakBefore(s.sels, a.idx+1));
+            for(let i=0; i<diff && i<targetSels.length; i++) targetSels[i].sel.value = "公休";
         }
     });
 
     updateSummary();
-    alert("出勤人数を最優先し、4連勤禁止と公休数を適用しました。");
+    alert("「必要人数」「3連勤上限」「非常勤10日」を全て修正しました。");
 }
 
-// 特定位置の連勤数を計算する補助関数
-function getStreakAt(sels, idx) {
-    let s = 0;
-    for(let i=idx; i>=0; i--) {
-        if(sels[i].value === "出勤" || sels[i].value === "有給") s++;
+function getStreakBefore(sels, d) {
+    let streak = 0;
+    for (let i = d - 1; i >= 0; i--) {
+        if (sels[i].value !== "公休") streak++;
         else break;
     }
-    return s;
+    return streak;
+}
+
+function getStreakAfter(sels, d, daysInMonth) {
+    let streak = 0;
+    for (let i = d + 1; i < daysInMonth; i++) {
+        if (sels[i].value !== "公休") streak++;
+        else break;
+    }
+    return streak;
+}
+
+function getWorkCountSoFar(sels, limit) {
+    return sels.slice(0, limit).filter(sel => sel.value !== "公休").length;
 }
 
 function updateSummary() {
@@ -209,7 +208,7 @@ function updateSummary() {
         return `
             <div class="summary-row">
                 <span class="summary-name">${s.name} (${s.type==='full'?'常勤':'非常勤'})</span>
-                出勤:${c["出勤"]+c["有給"]} / 公休計:${c["公休"]+c["希望休"]} / 有給:${c["有給"]}
+                出勤計:${c["出勤"]+c["有給"]+c["希望休"]} / 公休計:${c["公休"]+c["希望休"]} / 有給:${c["有給"]}
             </div>`;
     }).join('');
 }
