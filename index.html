@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>シフト自動作成アプリ</title>
+    <title>シフト自動作成アプリ v2</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
-        <h1>シフト自動作成システム</h1>
+        <h1>シフト自動作成システム v2</h1>
 
         <section class="config-section">
             <div class="date-picker">
@@ -24,8 +24,13 @@
         </section>
 
         <section class="control-section">
+            <div class="guide">
+                <strong>【操作手順】</strong><br>
+                1. <strong>定休日・希望休</strong>を先に選択してください（定休日は全員「公」にするなど）。<br>
+                2. 日ごとの<strong>「必要人数」</strong>（表の最下部）を入力してください。<br>
+                3. 「シフト自動入力実行」をクリックしてください。
+            </div>
             <button class="btn-generate" onclick="autoFillShift()">シフト自動入力実行</button>
-            <p class="hint">※希望休（希）を先に手動で入力してから実行してください。</p>
         </section>
 
         <div class="table-wrapper">
@@ -35,6 +40,8 @@
                     <tr id="dayRow"></tr>
                 </thead>
                 <tbody id="shiftBody"></tbody>
+                <tfoot id="shiftFoot">
+                    </tfoot>
             </table>
         </div>
     </div>
