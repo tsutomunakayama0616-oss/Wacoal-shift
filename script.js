@@ -84,8 +84,8 @@ function generateTable() {
     updateSummary();
 }
 
-// 連勤判定用（出勤・有給・希望休をカウント）
-function isWorkForStreak(val) {
+// 連勤判定：出勤・有給・希望休を「稼働」とみなしてカウント
+function isWorkingForStreak(val) {
     return val === "出勤" || val === "有給" || val === "希望休";
 }
 
@@ -102,7 +102,7 @@ function autoFillShift() {
         sels: Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx)
     }));
 
-    // [1] 有給のランダム配置（空欄のみ）
+    // [1] 有給のランダム配置（空白箇所のみ）
     staffData.forEach(s => {
         let available = s.sels.filter(sel => sel.value === "");
         for(let i=0; i < s.config.paidDays && available.length > 0; i++){
@@ -112,30 +112,42 @@ function autoFillShift() {
         }
     });
 
-    // [2] メイン割り当て：日ごとに「出勤：出」の人だけで必要人数を埋める
+    // [2] メイン割り当て：日ごとに「出勤：出」だけで必要人数を埋める
     for (let d = 0; d < daysInMonth; d++) {
         const need = parseInt(needInputs[d].value) || 0;
         
         let safety = 0;
-        // 判定条件を「value === '出勤'」に限定
-        while (staffData.filter(s => s.sels[d].value === "出勤").length < need && safety < 100) {
+        while (staffData.filter(s => s.sels[d].value === "出勤").length < need && safety < 200) {
             safety++;
             
-            let candidates = staffData.filter(s => s.sels[d].value === "");
+            // 候補：未設定の人、かつ今日出ると4連勤にならない人
+            let candidates = staffData.filter(s => {
+                if (s.sels[d].value !== "") return false;
+                
+                // 前3日間の連勤チェック
+                let streak = 0;
+                for (let i = d - 1; i >= 0; i--) {
+                    if (isWorkingForStreak(s.sels[i].value)) streak++;
+                    else break;
+                }
+                return streak < 3; // 3連勤中なら、今日は出勤させない（4連勤阻止）
+            });
+
+            // 候補がゼロで人数が足りない場合、4連勤制限を緩和して補充
+            if (candidates.length === 0) {
+                candidates = staffData.filter(s => s.sels[d].value === "");
+            }
             if (candidates.length === 0) break;
 
+            // 出勤数が少ない人を優先
             candidates.sort((a, b) => {
-                // 4連勤回避（連勤判定は有給・希も含む）
-                let aStrk = 0; for(let i=d-1; i>=0 && isWorkForStreak(a.sels[i].value); i--) aStrk++;
-                let bStrk = 0; for(let i=d-1; i>=0 && isWorkForStreak(b.sels[i].value); i--) bStrk++;
-                if ((aStrk >= 3) !== (bStrk >= 3)) return aStrk >= 3 ? 1 : -1;
-
                 // 非常勤10日制限
-                if (a.config.type === 'part' && a.sels.filter(sel => isWorkForStreak(sel.value)).length >= 10) return 1;
-                if (b.config.type === 'part' && b.sels.filter(sel => isWorkForStreak(sel.value)).length >= 10) return -1;
-
-                return a.sels.filter(sel => isWorkForStreak(sel.value)).length - b.sels.filter(sel => isWorkForStreak(sel.value)).length;
+                if (a.config.type === 'part' && a.sels.filter(sel => isWorkingForStreak(sel.value)).length >= 10) return 1;
+                if (b.config.type === 'part' && b.sels.filter(sel => isWorkingForStreak(sel.value)).length >= 10) return -1;
+                
+                return a.sels.filter(sel => isWorkingForStreak(sel.value)).length - b.sels.filter(sel => isWorkingForStreak(sel.value)).length;
             });
+
             candidates[0].sels[d].value = "出勤";
         }
     }
@@ -148,18 +160,21 @@ function autoFillShift() {
             const targetOff = 9;
             let currentOffSels = () => s.sels.filter(sel => sel.value === "公休" || sel.value === "希望休");
             
+            // 休みすぎを削る
             while (currentOffSels().length > targetOff) {
                 let target = s.sels.find(sel => sel.value === "公休");
                 if(!target) break;
                 target.value = "出勤";
             }
+            // 休み不足を補う（ここで4連勤箇所を優先的に休ませる）
             while (currentOffSels().length < targetOff) {
                 let workSels = s.sels.filter(sel => sel.value === "出勤");
                 if(workSels.length === 0) break;
+                
                 workSels.sort((a, b) => {
                     let getS = (sel) => {
                         let idx = parseInt(sel.dataset.day) - 1;
-                        let st = 0; for(let i=idx; i>=0 && isWorkForStreak(s.sels[i].value); i--) st++;
+                        let st = 0; for(let i=idx; i>=0 && isWorkingForStreak(s.sels[i].value); i--) st++;
                         return st;
                     };
                     return getS(b) - getS(a);
@@ -170,7 +185,7 @@ function autoFillShift() {
     });
 
     updateSummary();
-    alert("修正完了：必要人数を「出勤」のみでカウントし、休みを9日に調整しました。");
+    alert("生成完了：4連勤制限を適用し、必要人数を「出勤」のみで確保しました。");
 }
 
 function updateSummary() {
