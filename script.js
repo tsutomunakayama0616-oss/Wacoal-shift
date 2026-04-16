@@ -1,9 +1,9 @@
 let staffs = [
-    { name: "常勤1", type: "full", paidDays: 0 },
-    { name: "常勤2", type: "full", paidDays: 0 },
-    { name: "常勤3", type: "full", paidDays: 0 },
-    { name: "常勤4", type: "full", paidDays: 0 },
-    { name: "非常勤1", type: "part", paidDays: 0 }
+    { name: "スタッフ1", type: "full", paidDays: 0 },
+    { name: "スタッフ2", type: "full", paidDays: 0 },
+    { name: "スタッフ3", type: "full", paidDays: 0 },
+    { name: "スタッフ4", type: "full", paidDays: 0 },
+    { name: "スタッフ5", type: "part", paidDays: 0 }
 ];
 
 window.onload = () => {
@@ -17,15 +17,13 @@ function renderStaffList() {
     const list = document.getElementById('staffList');
     list.innerHTML = staffs.map((s, i) => `
         <div class="staff-item">
-            <input type="text" value="${s.name}" style="width:100%;" onchange="staffs[${i}].name=this.value; generateTable();">
-            <select style="width:100%; margin-top:5px;" onchange="staffs[${i}].type=this.value; updateSummary();">
+            <input type="text" value="${s.name}" style="width:100%" onchange="staffs[${i}].name=this.value; generateTable();">
+            <select onchange="staffs[${i}].type=this.value; updateSummary();" style="width:100%; margin:5px 0;">
                 <option value="full" ${s.type==='full'?'selected':''}>常勤</option>
                 <option value="part" ${s.type==='part'?'selected':''}>非常勤</option>
             </select>
-            <div style="margin-top:8px; font-size:13px;">
-                有給: <input type="number" value="${s.paidDays}" min="0" style="width:40px;" onchange="staffs[${i}].paidDays=parseInt(this.value)||0; updateSummary();">日
-                <button onclick="removeStaff(${i})" style="float:right; background:#ff4d4d; color:white; border:none; padding:2px 6px; border-radius:4px;">×</button>
-            </div>
+            有給:<input type="number" value="${s.paidDays}" style="width:40px;" onchange="staffs[${i}].paidDays=parseInt(this.value)||0; updateSummary();">
+            <button onclick="removeStaff(${i})" style="color:red; float:right;">×</button>
         </div>
     `).join('');
 }
@@ -42,12 +40,15 @@ function generateTable() {
     document.getElementById('dateRow').innerHTML = '<th>名前</th>' + Array.from({length: daysInMonth}, (_, i) => `<th>${i+1}</th>`).join('');
     
     let dayHtml = '<th>曜</th>';
+    let holHtml = '<th>定休日</th>';
     for (let d = 1; d <= daysInMonth; d++) {
         const dayOfWeek = new Date(year, month - 1, d).getDay();
         const className = dayOfWeek === 6 ? 'sat' : dayOfWeek === 0 ? 'sun' : '';
         dayHtml += `<th class="${className}">${["日","月","火","水","木","金","土"][dayOfWeek]}</th>`;
+        holHtml += `<td><div class="holiday-btn" onclick="setHoliday(${d})">休み</div></td>`;
     }
     document.getElementById('dayRow').innerHTML = dayHtml;
+    document.getElementById('holidayRow').innerHTML = holHtml;
 
     document.getElementById('shiftBody').innerHTML = staffs.map((staff, sIdx) => {
         let cells = `<td>${staff.name}</td>`;
@@ -65,6 +66,15 @@ function generateTable() {
     updateSummary();
 }
 
+// 【新機能】特定の日の全員を「公休」にする
+function setHoliday(day) {
+    const selects = document.querySelectorAll(`.shift-select[data-day="${day}"]`);
+    selects.forEach(s => s.value = "公休");
+    const needInput = document.querySelector(`.need-count-input[data-day="${day}"]`);
+    if(needInput) needInput.value = 0; // 休みなので必要人数を0に
+    updateSummary();
+}
+
 function autoFillShift() {
     const selects = document.querySelectorAll('.shift-select');
     const needInputs = document.querySelectorAll('.need-count-input');
@@ -75,11 +85,14 @@ function autoFillShift() {
     for (let t = 0; t < 1000; t++) {
         let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
             let val = Array.from(selects).find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d + 1).value;
-            return (val === "希望休") ? "希望休" : "";
+            // 「希望休」「公休」「有給」が既に入っている場合はそのまま固定
+            return (val !== "" && val !== "出勤") ? val : "";
         }));
 
+        // 1. 指定された「有給日数」の不足分をランダムに配置
         grid.forEach((row, sIdx) => {
-            let needed = staffs[sIdx].paidDays;
+            let currentPaid = row.filter(v => v === "有給").length;
+            let needed = staffs[sIdx].paidDays - currentPaid;
             let emptyIdx = row.map((v, i) => v === "" ? i : -1).filter(i => i !== -1);
             for (let i = 0; i < needed && emptyIdx.length > 0; i++) {
                 let r = Math.floor(Math.random() * emptyIdx.length);
@@ -88,9 +101,12 @@ function autoFillShift() {
             }
         });
 
+        // 2. 出勤配置（必要人数・4連勤・非常勤10日制限）
         let fail = false;
         for (let d = 0; d < daysInMonth; d++) {
-            const currentNeed = parseInt(needInputs[d].value) || 0;
+            const dailyNeed = parseInt(needInputs[d].value) || 0;
+            let currentStaffCount = grid.filter(row => row[d] === "出勤").length;
+
             let candidates = staffs.map((_, i) => i).filter(sIdx => {
                 if (grid[sIdx][d] !== "") return false;
                 let streak = 0;
@@ -101,13 +117,14 @@ function autoFillShift() {
             }).sort(() => Math.random() - 0.5);
 
             for (let sIdx of candidates) {
-                if (grid.filter(row => row[d] === "出勤").length >= currentNeed) break;
+                if (grid.filter(row => row[d] === "出勤").length >= dailyNeed) break;
                 grid[sIdx][d] = "出勤";
             }
-            if (grid.filter(row => row[d] === "出勤").length < currentNeed) { fail = true; break; }
+            if (grid.filter(row => row[d] === "出勤").length < dailyNeed) { fail = true; break; }
         }
         if (fail) continue;
 
+        // 3. 常勤の休み9日調整（公休＋希望休）
         let adjFail = false;
         grid.forEach((row, sIdx) => {
             row.forEach((v, i) => { if(v==="") row[i] = "公休"; });
@@ -116,10 +133,6 @@ function autoFillShift() {
             while (getOffs().length < 9) {
                 let w = row.map((v, i) => v === "出勤" ? i : -1).filter(i => i !== -1);
                 if (w.length === 0) { adjFail = true; break; }
-                w.sort((a,b) => {
-                    let s = (idx) => { let c=0; for(let j=idx; j>=0 && row[j]==="出勤"; j--) c++; return c; };
-                    return s(b) - s(a);
-                });
                 row[w[0]] = "公休";
             }
             while (getOffs().length > 9) {
@@ -138,9 +151,9 @@ function autoFillShift() {
     if (finalGrid) {
         selects.forEach(sel => { sel.value = finalGrid[sel.dataset.staff][sel.dataset.day - 1]; });
         updateSummary();
-        alert("完成しました！");
+        alert("生成完了！定休日・必要人数をすべて守りました。");
     } else {
-        alert("条件が厳しすぎます。設定を見直してください。");
+        alert("エラー：条件が厳しすぎます。設定を見直してください。");
     }
 }
 
@@ -151,6 +164,6 @@ function updateSummary() {
         const mySels = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
         const c = { "出勤":0, "公休":0, "希望休":0, "有給":0, "":0 };
         mySels.forEach(sel => { if(c.hasOwnProperty(sel.value)) c[sel.value]++; });
-        return `<div class="summary-row"><strong>${s.name}</strong> (${s.type==='full'?'常勤':'非常勤'})<br>出勤:${c["出勤"]} / 有給:${c["有給"]} / 休み計:${c["公休"]+c["希望休"]}</div>`;
+        return `<div class="summary-row"><strong>${s.name}</strong><br>出勤:${c["出勤"]} / 有給:${c["有給"]} / 休み:${c["公休"]+c["希望休"]}</div>`;
     }).join('');
 }
