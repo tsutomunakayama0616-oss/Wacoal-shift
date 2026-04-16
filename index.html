@@ -3,18 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Shift Manager</title>
+    <title>Pro Shift Manager v4</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="app-container">
         <header>
-            <h1>Shift Planner <span class="version">Pro v3</span></h1>
+            <h1>Shift Planner <span class="version">Pro v4</span></h1>
             <div class="header-controls">
-                <div class="input-group">
-                    <label>対象年月</label>
-                    <input type="month" id="targetMonth" onchange="generateTable()">
-                </div>
+                <input type="month" id="targetMonth" onchange="generateTable()">
                 <button class="btn-primary" onclick="autoFillShift()">自動作成を実行</button>
             </div>
         </header>
@@ -23,9 +20,8 @@
             <aside class="sidebar">
                 <div class="card">
                     <h3>スタッフ設定</h3>
-                    <p class="instruction">非常勤は出勤上限10日です</p>
                     <div id="staffList"></div>
-                    <button class="btn-secondary" onclick="addStaff()">+ スタッフ追加</button>
+                    <button class="btn-secondary" onclick="addStaff()">+ 追加</button>
                 </div>
 
                 <div class="card status-card">
@@ -38,7 +34,7 @@
 
             <section class="table-area">
                 <div class="guide-banner">
-                    <p>❶ 希望休・定休日を先に選択 ❷ 日ごとの必要人数を入力 ❸ 自動作成を実行</p>
+                    ❶ 希望休・定休日を選択 ❷ 最下部の必要人数を入力 ❸ 実行
                 </div>
                 <div class="table-wrapper">
                     <table id="shiftTable">
