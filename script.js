@@ -94,7 +94,10 @@ function autoFillShift() {
         });
     });
 
-    // 1. 有給をランダムに配置
+    // 初期化：自動生成前に手動入力を保持しつつ、前の自動生成結果をクリア
+    grid.forEach(row => row.forEach(sel => { if(sel.value === "出勤" || sel.value === "公休") sel.value = ""; }));
+
+    // 1. 有給をランダムに配置（空欄のみ）
     grid.forEach((row, sIdx) => {
         let emptyIndices = row.map((sel, i) => sel.value === "" ? i : -1).filter(i => i !== -1);
         for(let i=0; i < staffs[sIdx].paidDays && emptyIndices.length > 0; i++){
@@ -109,44 +112,53 @@ function autoFillShift() {
         const need = parseInt(needInputs[d].value) || 0;
         
         let candidates = staffs.map((_, i) => i)
-            .filter(sIdx => grid[sIdx][d].value === "")
-            .sort(() => Math.random() - 0.5);
+            .filter(sIdx => {
+                if (grid[sIdx][d].value !== "") return false;
+                
+                // 【制限1】出勤の4連勤チェック
+                let streak = 0;
+                for (let i = d - 1; i >= 0; i--) {
+                    if (grid[sIdx][i].value === "出勤") streak++;
+                    else break;
+                }
+                if (streak >= 3) return false;
 
+                // 【制限2】非常勤の出勤10日制限
+                if (staffs[sIdx].type === 'part') {
+                    let currentWorkCount = grid[sIdx].filter(sel => sel.value === "出勤").length;
+                    if (currentWorkCount >= 10) return false;
+                }
+
+                return true;
+            })
+            .sort((a, b) => {
+                // 出勤が少ない人を優先して割り当てる（平準化）
+                let countA = grid[a].filter(sel => sel.value === "出勤").length;
+                let countB = grid[b].filter(sel => sel.value === "出勤").length;
+                return countA - countB;
+            });
+
+        // 必要な人数分だけ「出勤」にする
         for (let sIdx of candidates) {
             if (grid.filter(row => row[d].value === "出勤").length >= need) break;
-
-            // 「出勤」のみを対象とした連勤チェック
-            let streak = 0;
-            for (let i = d - 1; i >= 0; i--) {
-                if (grid[sIdx][i].value === "出勤") streak++;
-                else break; // 出勤以外（有給・希含む）があればリセット
-            }
-            
-            if (streak < 3) {
-                grid[sIdx][d].value = "出勤";
-            }
-        }
-
-        // 足りない場合の補充
-        if (grid.filter(row => row[d].value === "出勤").length < need) {
-            for (let sIdx of candidates) {
-                if (grid.filter(row => row[d].value === "出勤").length >= need) break;
-                if (grid[sIdx][d].value === "") grid[sIdx][d].value = "出勤";
-            }
+            grid[sIdx][d].value = "出勤";
         }
     }
 
     // 3. 常勤の休み調整（合計9日）
     grid.forEach((row, sIdx) => {
+        // 空欄をすべて公休に
         row.forEach(sel => { if(sel.value === "") sel.value = "公休"; });
         
         if (staffs[sIdx].type === 'full') {
             const getOffs = () => row.filter(sel => sel.value === "公休" || sel.value === "希望休");
             
+            // 休み不足（9日未満）の場合：出勤を公休に変える
             while (getOffs().length < 9) {
                 let workSels = row.filter(sel => sel.value === "出勤");
                 if (workSels.length === 0) break;
-                // 「出勤」の連勤が長い箇所を優先
+                
+                // 出勤の連勤が長い箇所を優先的に休ませる
                 workSels.sort((a, b) => {
                     let getS = (s) => {
                         let idx = parseInt(s.dataset.day) - 1;
@@ -157,6 +169,8 @@ function autoFillShift() {
                 });
                 workSels[0].value = "公休";
             }
+            
+            // 休みすぎ（9日超）の場合：公休を出勤に変える
             while (getOffs().length > 9) {
                 let offSel = row.find(sel => sel.value === "公休");
                 if (!offSel) break;
@@ -166,7 +180,7 @@ function autoFillShift() {
     });
 
     updateSummary();
-    alert("生成が完了しました。※「出勤」が4回続くことを制限しています。");
+    alert("修正完了：4連勤制限(出勤のみ対象)および非常勤10日制限を適用しました。");
 }
 
 function updateSummary() {
