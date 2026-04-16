@@ -83,16 +83,24 @@ function setColumnHoliday(day) {
 function autoFillShift() {
     const selects = Array.from(document.querySelectorAll('.shift-select'));
     const needInputs = Array.from(document.querySelectorAll('.need-count-input'));
+    const dateVal = document.getElementById('targetMonth').value;
+    const [year, month] = dateVal.split('-').map(Number);
     const daysInMonth = needInputs.length;
 
+    // 日曜日のインデックスを取得
+    const sundays = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+        if (new Date(year, month - 1, d).getDay() === 0) sundays.push(d - 1);
+    }
+
     let finalGrid = null;
-    for (let trial = 0; trial < 1000; trial++) {
+    for (let trial = 0; trial < 2000; trial++) {
         let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
             const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
             return (sel && sel.value !== "" && sel.value !== "出勤") ? sel.value : "";
         }));
 
-        // 有給
+        // 有給の配置
         grid.forEach((row, sIdx) => {
             let needed = staffs[sIdx].paidDays - row.filter(v => v === "有給").length;
             let empty = row.map((v, i) => v === "" ? i : -1).filter(i => i !== -1);
@@ -103,18 +111,41 @@ function autoFillShift() {
             }
         });
 
-        // 出勤
         let success = true;
         for (let d = 0; d < daysInMonth; d++) {
             const need = parseInt(needInputs[d].value) || 0;
+            
             let cand = staffs.map((_, i) => i).filter(sIdx => {
                 if (grid[sIdx][d] !== "") return false;
+                
+                // 【修正：出勤＋有給の連続制限】遡ってカウント
                 let streak = 0;
-                for (let i = d - 1; i >= 0 && grid[sIdx][i] === "出勤"; i--) streak++;
-                if (streak >= 3) return false;
+                for (let i = d - 1; i >= 0; i--) {
+                    if (grid[sIdx][i] === "出勤" || grid[sIdx][i] === "有給") streak++;
+                    else break;
+                }
+                if (streak >= 6) return false;
+
+                // 【修正：非常勤の10日上限 & 日曜の均等化チェック】
                 if (staffs[sIdx].type === 'part' && grid[sIdx].filter(v => v === "出勤").length >= 10) return false;
+
                 return true;
-            }).sort(() => Math.random() - 0.5);
+            });
+
+            // 【修正：バランス調整用のソート】
+            cand.sort((a, b) => {
+                // 非常勤の場合、既に出勤している日数が少ない人を優先（分散）
+                if (staffs[a].type === 'part' || staffs[b].type === 'part') {
+                    return grid[a].filter(v => v === "出勤").length - grid[b].filter(v => v === "出勤").length;
+                }
+                // 日曜日の場合、日曜出勤が少ない人を優先
+                if (sundays.includes(d)) {
+                    const countA = sundays.filter(sunIdx => grid[a][sunIdx] === "出勤").length;
+                    const countB = sundays.filter(sunIdx => grid[b][sunIdx] === "出勤").length;
+                    return countA - countB;
+                }
+                return Math.random() - 0.5;
+            });
 
             for (let sIdx of cand) {
                 if (grid.filter(row => row[d] === "出勤").length >= need) break;
@@ -122,7 +153,17 @@ function autoFillShift() {
             }
             if (grid.filter(row => row[d] === "出勤").length < need) { success = false; break; }
         }
-        if (success) { finalGrid = grid; break; }
+
+        if (success) {
+            // 【修正：空白を「公休」で埋める】
+            grid.forEach(row => {
+                for (let i = 0; i < row.length; i++) {
+                    if (row[i] === "") row[i] = "公休";
+                }
+            });
+            finalGrid = grid;
+            break;
+        }
     }
 
     if (finalGrid) {
