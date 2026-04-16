@@ -93,14 +93,14 @@ function autoFillShift() {
     }
 
     let finalGrid = null;
-    // 試行回数を増やしてパズルを解きやすくします
+    let failureCounts = Array(daysInMonth).fill(0); // 失敗した日付をカウントする用
+
     for (let trial = 0; trial < 3000; trial++) {
         let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
             const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
             return (sel && sel.value !== "" && sel.value !== "出勤") ? sel.value : "";
         }));
 
-        // 有給の配置
         grid.forEach((row, sIdx) => {
             let needed = staffs[sIdx].paidDays - row.filter(v => v === "有給").length;
             let empty = row.map((v, i) => v === "" ? i : -1).filter(i => i !== -1);
@@ -142,11 +142,14 @@ function autoFillShift() {
                 if (grid.filter(row => row[d] === "出勤").length >= need) break;
                 grid[sIdx][d] = "出勤";
             }
-            if (grid.filter(row => row[d] === "出勤").length < need) { success = false; break; }
+            if (grid.filter(row => row[d] === "出勤").length < need) { 
+                failureCounts[d]++; // この日で詰まったことを記録
+                success = false; 
+                break; 
+            }
         }
 
         if (success) {
-            // 【確定修正】ここで全ての空白を「公休」で強制的に埋めます
             grid.forEach(row => {
                 for (let i = 0; i < row.length; i++) {
                     if (row[i] === "") row[i] = "公休";
@@ -165,12 +168,15 @@ function autoFillShift() {
         });
         updateSummary();
     } else {
-        // 失敗した場合でも、現在の選択肢以外の空白を「公休」で埋めて表示を整える
-        selects.forEach(sel => {
-            if (sel.value === "") sel.value = "公休";
-        });
+        // 最も失敗が多かった日（＝原因の日）を特定
+        const maxFailDay = failureCounts.indexOf(Math.max(...failureCounts)) + 1;
+        const [y, m] = dateVal.split('-');
+        const failDayOfWeek = ["日","月","火","水","木","金","土"][new Date(y, m-1, maxFailDay).getDay()];
+
+        selects.forEach(sel => { if (sel.value === "") sel.value = "公休"; });
         updateSummary();
-        alert("条件が厳しすぎます。必要人数を減らすか、スタッフを増やしてください。");
+        
+        alert(`【エラー】条件に合う案が見つかりません。\n\n特に「${maxFailDay}日(${failDayOfWeek})」でスタッフが足りなくなっています。\n\nこの日の必要人数を減らすか、前後の休み設定を調整してください。`);
     }
 }
 
