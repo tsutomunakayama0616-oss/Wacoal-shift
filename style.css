@@ -1,0 +1,20 @@
+body { font-family: "Helvetica Neue", Arial, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; }
+.container { max-width: 1200px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+h1 { color: #333; text-align: center; }
+
+.config-section { display: flex; gap: 40px; margin-bottom: 20px; padding: 15px; background: #fafafa; border-radius: 5px; }
+.staff-item { margin-bottom: 8px; display: flex; gap: 10px; align-items: center; }
+.paid-input { width: 40px; }
+
+.table-wrapper { overflow-x: auto; margin-top: 20px; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: center; min-width: 40px; }
+
+th { background: #eee; }
+.sat { background-color: #e3f2fd !important; } /* 薄いブルー */
+.sun { background-color: #fff3e0 !important; } /* 薄いオレンジ */
+
+select { border: 1px solid #ccc; border-radius: 3px; padding: 2px; }
+.btn-generate { background: #4caf50; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+.btn-generate:hover { background: #45a049; }
+.remove-btn { background: #ff5252; color: white; border: none; border-radius: 3px; cursor: pointer; }
