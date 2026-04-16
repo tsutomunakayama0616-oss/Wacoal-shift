@@ -87,14 +87,14 @@ function autoFillShift() {
     const [year, month] = dateVal.split('-').map(Number);
     const daysInMonth = needInputs.length;
 
-    // 日曜日のインデックスを取得
     const sundays = [];
     for (let d = 1; d <= daysInMonth; d++) {
         if (new Date(year, month - 1, d).getDay() === 0) sundays.push(d - 1);
     }
 
     let finalGrid = null;
-    for (let trial = 0; trial < 2000; trial++) {
+    // 試行回数を増やしてパズルを解きやすくします
+    for (let trial = 0; trial < 3000; trial++) {
         let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
             const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
             return (sel && sel.value !== "" && sel.value !== "出勤") ? sel.value : "";
@@ -114,31 +114,22 @@ function autoFillShift() {
         let success = true;
         for (let d = 0; d < daysInMonth; d++) {
             const need = parseInt(needInputs[d].value) || 0;
-            
             let cand = staffs.map((_, i) => i).filter(sIdx => {
                 if (grid[sIdx][d] !== "") return false;
-                
-                // 【修正：出勤＋有給の連続制限】遡ってカウント
                 let streak = 0;
                 for (let i = d - 1; i >= 0; i--) {
                     if (grid[sIdx][i] === "出勤" || grid[sIdx][i] === "有給") streak++;
                     else break;
                 }
                 if (streak >= 6) return false;
-
-                // 【修正：非常勤の10日上限 & 日曜の均等化チェック】
                 if (staffs[sIdx].type === 'part' && grid[sIdx].filter(v => v === "出勤").length >= 10) return false;
-
                 return true;
             });
 
-            // 【修正：バランス調整用のソート】
             cand.sort((a, b) => {
-                // 非常勤の場合、既に出勤している日数が少ない人を優先（分散）
                 if (staffs[a].type === 'part' || staffs[b].type === 'part') {
                     return grid[a].filter(v => v === "出勤").length - grid[b].filter(v => v === "出勤").length;
                 }
-                // 日曜日の場合、日曜出勤が少ない人を優先
                 if (sundays.includes(d)) {
                     const countA = sundays.filter(sunIdx => grid[a][sunIdx] === "出勤").length;
                     const countB = sundays.filter(sunIdx => grid[b][sunIdx] === "出勤").length;
@@ -155,7 +146,7 @@ function autoFillShift() {
         }
 
         if (success) {
-            // 【修正：空白を「公休」で埋める】
+            // 【確定修正】ここで全ての空白を「公休」で強制的に埋めます
             grid.forEach(row => {
                 for (let i = 0; i < row.length; i++) {
                     if (row[i] === "") row[i] = "公休";
@@ -168,11 +159,18 @@ function autoFillShift() {
 
     if (finalGrid) {
         selects.forEach(sel => {
-            sel.value = finalGrid[parseInt(sel.dataset.staff)][parseInt(sel.dataset.day)-1];
+            const sIdx = parseInt(sel.dataset.staff);
+            const dIdx = parseInt(sel.dataset.day) - 1;
+            sel.value = finalGrid[sIdx][dIdx];
         });
         updateSummary();
     } else {
-        alert("条件が厳しすぎます。人数設定を減らすか、スタッフを増やしてください。");
+        // 失敗した場合でも、現在の選択肢以外の空白を「公休」で埋めて表示を整える
+        selects.forEach(sel => {
+            if (sel.value === "") sel.value = "公休";
+        });
+        updateSummary();
+        alert("条件が厳しすぎます。必要人数を減らすか、スタッフを増やしてください。");
     }
 }
 
