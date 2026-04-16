@@ -15,6 +15,20 @@ window.onload = () => {
     generateTable();
 };
 
+// 連勤チェック関数
+function canWork(gridRow, dayIdx, limit) {
+    let prev = 0;
+    for (let i = dayIdx - 1; i >= 0; i--) {
+        if (gridRow[i] === "出勤") prev++; else break;
+    }
+    let next = 0;
+    for (let i = dayIdx + 1; i < gridRow.length; i++) {
+        if (gridRow[i] === "出勤") next++; else break;
+    }
+    return (prev + next + 1) <= limit;
+}
+
+// UI生成系（変更なしのため省略）
 function renderStaffList() {
     const list = document.getElementById('staffList');
     if (!list) return;
@@ -32,16 +46,13 @@ function renderStaffList() {
         </div>
     `).join('');
 }
-
 function addStaff() { staffs.push({ name: "新規", type: "full", paidDays: 0 }); renderStaffList(); generateTable(); }
 function removeStaff(idx) { staffs.splice(idx, 1); renderStaffList(); generateTable(); }
-
 function generateTable() {
     const monthInput = document.getElementById('targetMonth');
     const [year, month] = monthInput.value.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     const defaultNeed = document.getElementById('defaultNeedCount').value;
-
     let dRow = '<th>名前</th>', wRow = '<th>曜</th>', hRow = '<th>定休日</th>';
     for (let d = 1; d <= daysInMonth; d++) {
         const date = new Date(year, month - 1, d);
@@ -54,7 +65,6 @@ function generateTable() {
     document.getElementById('dateRow').innerHTML = dRow;
     document.getElementById('dayRow').innerHTML = wRow;
     document.getElementById('holidayRow').innerHTML = hRow;
-    
     document.getElementById('shiftBody').innerHTML = staffs.map((staff, sIdx) => {
         let cells = `<td>${staff.name}</td>`;
         for (let d = 1; d <= daysInMonth; d++) {
@@ -64,15 +74,11 @@ function generateTable() {
         }
         return `<tr>${cells}</tr>`;
     }).join('');
-
     let fRow = '<td>目標人数</td>';
-    for (let d = 1; d <= daysInMonth; d++) {
-        fRow += `<td><input type="number" class="need-count-input" data-day="${d}" value="${defaultNeed}"></td>`;
-    }
+    for (let d = 1; d <= daysInMonth; d++) { fRow += `<td><input type="number" class="need-count-input" data-day="${d}" value="${defaultNeed}"></td>`; }
     document.getElementById('shiftFoot').innerHTML = `<tr>${fRow}</tr>`;
     updateSummary();
 }
-
 function setColumnHoliday(day) {
     document.querySelectorAll(`.shift-select[data-day="${day}"]`).forEach(s => s.value = "公休");
     const need = document.querySelector(`.need-count-input[data-day="${day}"]`);
@@ -80,31 +86,27 @@ function setColumnHoliday(day) {
     updateSummary();
 }
 
+// --- メイン：自動生成ロジック ---
 function autoFillShift() {
     const selects = Array.from(document.querySelectorAll('.shift-select'));
     const needInputs = Array.from(document.querySelectorAll('.need-count-input'));
     const daysInMonth = needInputs.length;
     const dailyTargets = needInputs.map(input => parseInt(input.value) || 0);
 
-    // 1. 各個人の「契約日数の下限」を守った初期配置
+    // 1. 【個人制約】をベースに土台を作る
     let grid = staffs.map((staff, sIdx) => {
         let row = Array.from({length: daysInMonth}, (_, d) => {
             const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
             return (sel && sel.value !== "") ? sel.value : "";
         });
-
         if (staff.type === 'full') {
-            // 常勤：休み9日をランダムに配置
             let offNeeded = 9 - row.filter(v => v === "希望休" || v === "公休" || v === "有給").length;
-            let safety = 0;
-            while (offNeeded > 0 && safety < 1000) {
+            while (offNeeded > 0) {
                 let d = Math.floor(Math.random() * daysInMonth);
                 if (row[d] === "") { row[d] = "公休"; offNeeded--; }
-                safety++;
             }
             for(let i=0; i<daysInMonth; i++) { if(row[i] === "") row[i] = "出勤"; }
         } else {
-            // 非常勤：出勤10回を週3以内でランダム配置
             let needWork = 10 - row.filter(v => v === "出勤").length;
             let safety = 0;
             while (needWork > 0 && safety < 1000) {
@@ -121,56 +123,70 @@ function autoFillShift() {
         return row;
     });
 
-    // 2. 日毎人数調整（削らず、契約の範囲内で補填する）
+    // 2. 【連勤破壊】フェーズ（最優先）
+    for (let s = 0; s < staffs.length; s++) {
+        let limit = (staffs[s].type === 'full') ? 4 : 2;
+        for (let d = 0; d < daysInMonth; d++) {
+            if (grid[s][d] !== "出勤") continue;
+            let count = 1;
+            let i = d - 1; while (i >= 0 && grid[s][i] === "出勤") { count++; i--; }
+            i = d + 1; while (i < daysInMonth && grid[s][i] === "出勤") { count++; i++; }
+            if (count > limit) { grid[s][d] = "公休"; }
+        }
+    }
+
+    // 3. 【人数削り】フェーズ（過多を調整）
     for (let d = 0; d < daysInMonth; d++) {
         let target = dailyTargets[d];
+        let upper = (target === 3) ? 3 : target;
         let workers = staffs.map((_, i) => i).filter(i => grid[i][d] === "出勤");
 
-        let lower = (target === 3) ? 2 : target;
+        while (workers.length > upper) {
+            let idx = workers[Math.floor(Math.random() * workers.length)];
+            grid[idx][d] = "公休";
+            workers = workers.filter(w => w !== idx);
+        }
+    }
 
-        // --- 少なすぎる場合：補填（★改善版ロジック） ---
+    // 4. 【人数補填】フェーズ（不足を調整）
+    for (let d = 0; d < daysInMonth; d++) {
+        let target = dailyTargets[d];
+        let lower = (target === 3) ? 2 : target;
+        let workers = staffs.map((_, i) => i).filter(i => grid[i][d] === "出勤");
+
         if (workers.length < lower) {
             let candidates = staffs.map((_, i) => i).filter(i => {
-                // 出勤していない（公休または希望休）人だけが候補
                 if (!(grid[i][d] === "公休" || grid[i][d] === "希望休")) return false;
+                let limit = (staffs[i].type === 'full') ? 4 : 2;
+                if (!canWork(grid[i], d, limit)) return false;
 
                 if (staffs[i].type === 'full') {
                     let offCount = grid[i].filter(v => v === "公休" || v === "希望休" || v === "有給").length;
-                    // ★ 9日より多い（休みすぎている）場合のみ、出勤に回せる
                     return offCount > 9;
                 }
-
                 if (staffs[i].type === 'part') {
                     let workCount = grid[i].filter(v => v === "出勤").length;
-                    // 非常勤：10回未満なら出勤に回せる
                     return workCount < 10;
                 }
                 return false;
             });
-
-            // 偏り防止のため候補をシャッフル
             candidates.sort(() => Math.random() - 0.5);
-
             for (let idx of candidates) {
                 if (workers.length >= lower) break;
                 grid[idx][d] = "出勤";
                 workers.push(idx);
             }
         }
-
-        if (workers.length < lower) {
-            console.warn(`${d+1}日: 目標人数に届きませんでした（現在${workers.length}人）`);
-        }
     }
 
-    // 3. 画面反映
+    // 書き戻し
     selects.forEach(sel => {
         const sIdx = parseInt(sel.dataset.staff);
         const dIdx = parseInt(sel.dataset.day) - 1;
         sel.value = grid[sIdx][dIdx];
     });
     updateSummary();
-    alert("シフト生成が完了しました！\n常勤9休・非常勤10出の契約を維持しつつ調整しました。");
+    alert("自動生成が完了しました！\n連勤を優先的に破壊しつつ、人数を調整しました。");
 }
 
 function updateSummary() {
@@ -181,7 +197,6 @@ function updateSummary() {
         const mySelects = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
         const counts = { "出勤": 0, "公休": 0, "希望休": 0, "有給": 0 };
         mySelects.forEach(sel => { if (counts[sel.value] !== undefined) counts[sel.value]++; });
-        const offSum = counts["公休"] + counts["希望休"] + counts["有給"];
-        return `<div class="summary-row"><strong>${s.name}</strong><br>出勤: ${counts["出勤"]}日 / 休み合計: ${offSum}日</div>`;
+        return `<div class="summary-row"><strong>${s.name}</strong><br>出勤: ${counts["出勤"]}日 / 休み: ${counts["公休"] + counts["希望休"] + counts["有給"]}日</div>`;
     }).join('');
 }
