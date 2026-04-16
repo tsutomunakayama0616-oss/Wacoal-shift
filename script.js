@@ -38,7 +38,8 @@ function generateTable() {
     const dateVal = document.getElementById('targetMonth').value;
     const [year, month] = dateVal.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
-    
+    const defaultNeed = document.getElementById('defaultNeedCount').value;
+
     let dRow = '<th>名前</th>', wRow = '<th>曜</th>', hRow = '<th>定休日</th>';
     for (let d = 1; d <= daysInMonth; d++) {
         const date = new Date(year, month - 1, d);
@@ -46,12 +47,12 @@ function generateTable() {
         const dayClass = dayOfWeek === 6 ? 'sat' : dayOfWeek === 0 ? 'sun' : '';
         dRow += `<th>${d}</th>`;
         wRow += `<th class="${dayClass}">${["日","月","火","水","木","金","土"][dayOfWeek]}</th>`;
-        hRow += `<td class="holiday-btn-cell"><button onclick="setColumnHoliday(${d})" style="font-size:10px">休</button></td>`;
+        hRow += `<td><button onclick="setColumnHoliday(${d})" style="font-size:10px">休</button></td>`;
     }
     document.getElementById('dateRow').innerHTML = dRow;
     document.getElementById('dayRow').innerHTML = wRow;
     document.getElementById('holidayRow').innerHTML = hRow;
-
+    
     document.getElementById('shiftBody').innerHTML = staffs.map((staff, sIdx) => {
         let cells = `<td>${staff.name}</td>`;
         for (let d = 1; d <= daysInMonth; d++) {
@@ -62,8 +63,12 @@ function generateTable() {
         return `<tr>${cells}</tr>`;
     }).join('');
 
-    let fRow = '<td>必要人数</td>';
-    for (let d = 1; d <= daysInMonth; d++) fRow += `<td><input type="number" class="need-count-input" data-day="${d}" value="3"></td>`;
+    let fRow = '<td>目標人数</td>';
+    for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(year, month - 1, d);
+        const val = date.getDay() === 0 ? 0 : defaultNeed;
+        fRow += `<td><input type="number" class="need-count-input" data-day="${d}" value="${val}"></td>`;
+    }
     document.getElementById('shiftFoot').innerHTML = `<tr>${fRow}</tr>`;
     updateSummary();
 }
@@ -78,34 +83,31 @@ function setColumnHoliday(day) {
 function autoFillShift() {
     const selects = Array.from(document.querySelectorAll('.shift-select'));
     const needInputs = Array.from(document.querySelectorAll('.need-count-input'));
-    const dateVal = document.getElementById('targetMonth').value;
-    const [year, month] = dateVal.split('-').map(Number);
     const daysInMonth = needInputs.length;
-    const sundays = [];
-    for (let d = 1; d <= daysInMonth; d++) if (new Date(year, month - 1, d).getDay() === 0) sundays.push(d - 1);
 
     let finalGrid = null;
-    let errorLog = Array(daysInMonth).fill(0).map(() => ({ totalFail: 0, reasons: {} }));
-
-    for (let trial = 0; trial < 3000; trial++) {
+    for (let trial = 0; trial < 10000; trial++) {
         let grid = staffs.map((_, sIdx) => Array.from({length: daysInMonth}, (_, d) => {
             const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
-            return (sel && sel.value !== "" && sel.value !== "出勤") ? sel.value : "";
+            return (sel && (sel.value !== "" && sel.value !== "出勤")) ? sel.value : "";
         }));
 
         grid.forEach((row, sIdx) => {
-            let needed = staffs[sIdx].paidDays - row.filter(v => v === "有給").length;
-            let empty = row.map((v, i) => v === "" ? i : -1).filter(i => i !== -1);
-            for (let i = 0; i < needed && empty.length > 0; i++) {
-                let r = Math.floor(Math.random() * empty.length);
-                row[empty[r]] = "有給";
-                empty.splice(r, 1);
+            let currentPaid = row.filter(v => v === "有給").length;
+            let needed = staffs[sIdx].paidDays - currentPaid;
+            let emptyIndices = row.map((v, i) => v === "" ? i : -1).filter(i => i !== -1);
+            for (let i = 0; i < needed && emptyIndices.length > 0; i++) {
+                let r = Math.floor(Math.random() * emptyIndices.length);
+                row[emptyIndices[r]] = "有給";
+                emptyIndices.splice(r, 1);
             }
         });
 
         let success = true;
         for (let d = 0; d < daysInMonth; d++) {
-            const need = parseInt(needInputs[d].value) || 0;
+            let targetNeed = parseInt(needInputs[d].value) || 0;
+            
+            // 候補者選定
             let cand = staffs.map((_, i) => i).filter(sIdx => {
                 if (grid[sIdx][d] !== "") return false;
                 let streak = 0;
@@ -113,28 +115,29 @@ function autoFillShift() {
                     if (grid[sIdx][i] === "出勤" || grid[sIdx][i] === "有給") streak++;
                     else break;
                 }
-                if (streak >= 6) { errorLog[d].reasons["6連勤制限"] = (errorLog[d].reasons["6連勤制限"] || 0) + 1; return false; }
-                if (staffs[sIdx].type === 'part' && grid[sIdx].filter(v => v === "出勤").length >= 10) { 
-                    errorLog[d].reasons["非常勤10日制限"] = (errorLog[d].reasons["非常勤10日制限"] || 0) + 1; return false; 
-                }
+                if (streak >= 6) return false;
+                if (staffs[sIdx].type === 'part' && grid[sIdx].filter(v => v === "出勤").length >= 10) return false;
                 return true;
             });
 
             cand.sort((a, b) => {
-                if (staffs[a].type === 'part' || staffs[b].type === 'part') return grid[a].filter(v => v === "出勤").length - grid[b].filter(v => v === "出勤").length;
-                if (sundays.includes(d)) {
-                    const cA = sundays.filter(si => grid[a][si] === "出勤").length;
-                    const cB = sundays.filter(si => grid[b][si] === "出勤").length;
-                    return cA - cB;
-                }
-                return Math.random() - 0.5;
+                const countA = grid[a].filter(v => v === "出勤").length;
+                const countB = grid[b].filter(v => v === "出勤").length;
+                return countA - countB + (Math.random() - 0.5);
             });
 
+            let assigned = 0;
             for (let sIdx of cand) {
-                if (grid.filter(row => row[d] === "出勤").length >= need) break;
+                if (assigned >= targetNeed) break;
                 grid[sIdx][d] = "出勤";
+                assigned++;
             }
-            if (grid.filter(row => row[d] === "出勤").length < need) { errorLog[d].totalFail++; success = false; break; }
+
+            // 「無理なら2人」のロジック：
+            // 目標が3人以上で、かつ2人すら確保できなかった場合のみ失敗とする
+            // （目標3人で2人しか入らなくても、この試行は継続する）
+            let minAcceptable = (targetNeed >= 3) ? 2 : targetNeed;
+            if (assigned < minAcceptable) { success = false; break; }
         }
 
         if (success) {
@@ -145,15 +148,15 @@ function autoFillShift() {
     }
 
     if (finalGrid) {
-        selects.forEach(sel => { sel.value = finalGrid[parseInt(sel.dataset.staff)][parseInt(sel.dataset.day)-1]; });
+        selects.forEach(sel => {
+            const sIdx = parseInt(sel.dataset.staff);
+            const dIdx = parseInt(sel.dataset.day) - 1;
+            sel.value = finalGrid[sIdx][dIdx];
+        });
         updateSummary();
-        alert("自動生成が完了しました！");
+        alert("自動生成が完了しました！\n（一部、目標人数に届かず最低人数で配置した箇所があるかもしれません）");
     } else {
-        let wd = 0, mf = -1;
-        errorLog.forEach((l, i) => { if(l.totalFail > mf) { mf = l.totalFail; wd = i; } });
-        selects.forEach(sel => { if (sel.value === "") sel.value = "公休"; });
-        updateSummary();
-        alert(`【エラー】${wd + 1}日付近でスタッフが足りません。必要人数を減らすか設定を見直してください。`);
+        alert("条件が厳しすぎます。休み設定を減らすか、スタッフを追加してください。");
     }
 }
 
@@ -163,6 +166,6 @@ function updateSummary() {
         const my = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
         const c = { "出勤":0, "公休":0, "希望休":0, "有給":0 };
         my.forEach(sel => { if(c[sel.value] !== undefined) c[sel.value]++; });
-        return `<div class="summary-row"><strong>${s.name}</strong><br>出:${c["出勤"]} / 有:${c["有給"]} / 休:${c["公休"]+c["希望休"]}</div>`;
+        return `<div class="summary-row"><strong>${s.name}</strong><br>出勤:${c["出勤"]} / 有給:${c["有給"]} / 休み:${c["公休"]+c["希望休"]}</div>`;
     }).join('');
 }
