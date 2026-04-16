@@ -1,9 +1,9 @@
 let staffs = [
-    { name: "常勤1", paidDays: 0 },
-    { name: "常勤2", paidDays: 0 },
-    { name: "常勤3", paidDays: 0 },
-    { name: "常勤4", paidDays: 0 },
-    { name: "非常勤1", paidDays: 0 }
+    { name: "常勤1", type: "full", paidDays: 0 },
+    { name: "常勤2", type: "full", paidDays: 0 },
+    { name: "常勤3", type: "full", paidDays: 0 },
+    { name: "常勤4", type: "full", paidDays: 0 },
+    { name: "非常勤1", type: "part", paidDays: 0 }
 ];
 
 window.onload = () => {
@@ -18,14 +18,17 @@ function renderStaffList() {
     list.innerHTML = staffs.map((s, i) => `
         <div class="staff-item">
             <input type="text" value="${s.name}" onchange="staffs[${i}].name=this.value; generateTable();">
-            有給:<input type="number" class="paid-input" value="${s.paidDays}" min="0" onchange="staffs[${i}].paidDays=parseInt(this.value)">日
-            <button class="remove-btn" onclick="removeStaff(${i})">削除</button>
+            <select onchange="staffs[${i}].type=this.value">
+                <option value="full" ${s.type==='full'?'selected':''}>常勤</option>
+                <option value="part" ${s.type==='part'?'selected':''}>非常勤</option>
+            </select>
+            <button onclick="removeStaff(${i})" style="color:red; background:none; border:none; cursor:pointer; font-weight:bold;">×</button>
         </div>
     `).join('');
 }
 
 function addStaff() {
-    staffs.push({ name: "新スタッフ", paidDays: 0 });
+    staffs.push({ name: "新スタッフ", type: "full", paidDays: 0 });
     renderStaffList();
     generateTable();
 }
@@ -50,9 +53,8 @@ function generateTable() {
     let dayHtml = '<th>曜日</th>';
     for (let d = 1; d <= daysInMonth; d++) {
         const dayOfWeek = new Date(year, month - 1, d).getDay();
-        const dayLabels = ["日", "月", "火", "水", "木", "金", "土"];
         const className = dayOfWeek === 6 ? 'sat' : dayOfWeek === 0 ? 'sun' : '';
-        dayHtml += `<th class="${className}">${dayLabels[dayOfWeek]}</th>`;
+        dayHtml += `<th class="${className}">${["日","月","火","水","木","金","土"][dayOfWeek]}</th>`;
     }
     dayRow.innerHTML = dayHtml;
 
@@ -73,11 +75,8 @@ function generateTable() {
         return `<tr>${cells}</tr>`;
     }).join('');
 
-    // 必要人数の入力行
     let footHtml = '<td>必要人数</td>';
-    for (let d = 1; d <= daysInMonth; d++) {
-        footHtml += `<td><input type="number" class="need-count-input" data-day="${d}" value="3" min="0" max="${staffs.length}"></td>`;
-    }
+    for (let d = 1; d <= daysInMonth; d++) footHtml += `<td><input type="number" class="need-count-input" data-day="${d}" value="3"></td>`;
     shiftFoot.innerHTML = `<tr>${footHtml}</tr>`;
 }
 
@@ -87,89 +86,85 @@ function autoFillShift() {
     const [year, month] = document.getElementById('targetMonth').value.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    // 1. 下準備：各自の公休残数と現在の連勤状態を管理
-    let staffData = staffs.map((s, idx) => {
-        const staffSelects = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
-        // 希望休(希)と、事前に手動設定された公休(公)をカウント
-        const preOffCount = staffSelects.filter(sel => sel.value === "希望休" || sel.value === "公休").length;
-        return {
-            selects: staffSelects,
-            remainingOff: Math.max(0, 9 - preOffCount),
-            remainingPaid: s.paidDays,
-            workStreak: 0
-        };
-    });
+    let staffState = staffs.map((s, idx) => ({
+        info: s,
+        selects: Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx),
+        offCount: 0,
+        workCount: 0,
+        streak: 0
+    }));
 
-    // 2. 有給の自動配置（希望休・公休以外にランダムに配置）
-    staffData.forEach(data => {
-        let availableForPaid = data.selects.filter(sel => sel.value === "出勤");
-        for(let i=0; i < data.remainingPaid && availableForPaid.length > 0; i++){
-            let randIdx = Math.floor(Math.random() * availableForPaid.length);
-            availableForPaid[randIdx].value = "有給";
-            availableForPaid.splice(randIdx, 1);
-        }
-    });
+    // メインロジック：日ごとに判定
+    for (let d = 0; d < daysInMonth; d++) {
+        const need = parseInt(needInputs[d].value);
 
-    // 3. メインロジック：日ごとに「休ませる人」を決める
-    for (let d = 1; d <= daysInMonth; d++) {
-        const dIdx = d - 1;
-        const needCount = parseInt(needInputs[dIdx].value);
-        
-        // すでに休み（希・公）の人をカウント
-        let currentOff = staffData.filter(data => data.selects[dIdx].value === "希望休" || data.selects[dIdx].value === "公休").length;
-        let currentWorkers = staffs.length - currentOff;
+        // 1. 強制制約チェック (4連勤防止 & 非常勤上限)
+        staffState.forEach(state => {
+            const current = state.selects[d];
+            if (current.value === "公休" || current.value === "希望休") {
+                state.streak = 0;
+                return;
+            }
 
-        // もし出勤予定人数が必要人数より多ければ、誰かを公休にする
-        // かつ、4連勤防止や公休残数がある人を優先
-        while (currentWorkers > needCount) {
-            // 公休にできる候補者を探す（既に出勤/有給の人の中から）
-            let candidates = staffData.filter(data => 
-                (data.selects[dIdx].value === "出勤" || data.selects[dIdx].value === "有給") && data.remainingOff > 0
-            );
+            // 【重要】3連勤後の4日目は強制的に休み
+            let mustRest = false;
+            if (state.streak >= 3) mustRest = true;
+            if (state.info.type === 'part' && state.workCount >= 10) mustRest = true;
 
+            if (mustRest && current.value === "出勤") {
+                current.value = "公休";
+                state.streak = 0;
+            }
+        });
+
+        // 2. 出勤人数が過剰な場合に休ませる
+        let workers = staffState.filter(s => s.selects[d].value === "出勤" || s.selects[d].value === "有給");
+        while (workers.length > need) {
+            let candidates = workers.filter(s => s.selects[d].value === "出勤");
             if (candidates.length === 0) break;
 
-            // 優先順位：1.連勤が長い人 2.公休残が多い人
-            candidates.sort((a, b) => {
-                if (b.workStreak !== a.workStreak) return b.workStreak - a.workStreak;
-                return b.remainingOff - a.remainingOff;
-            });
-
-            const target = candidates[0];
-            target.selects[dIdx].value = "公休";
-            target.remainingOff--;
-            currentWorkers--;
+            // 連勤が長い順 > 常勤優先 の順で休ませる
+            candidates.sort((a, b) => b.streak - a.streak || (b.info.type === 'full' ? 1 : -1));
+            
+            let target = candidates[0];
+            target.selects[d].value = "公休";
+            workers = staffState.filter(s => s.selects[d].value === "出勤" || s.selects[d].value === "有給");
         }
 
-        // その日の連勤数を更新
-        staffData.forEach(data => {
-            const val = data.selects[dIdx].value;
+        // 3. 連勤状態の更新
+        staffState.forEach(state => {
+            const val = state.selects[d].value;
             if (val === "出勤" || val === "有給") {
-                data.workStreak++;
+                state.streak++;
+                state.workCount++;
             } else {
-                data.workStreak = 0;
+                state.streak = 0;
+                state.offCount++;
             }
         });
     }
 
-    // 4. まだ公休が余っている場合、4連勤を超えないように最終調整
-    staffData.forEach(data => {
-        if (data.remainingOff > 0) {
-            let streak = 0;
-            data.selects.forEach(sel => {
-                if (sel.value === "出勤" || sel.value === "有給") {
-                    streak++;
-                    if (streak >= 4 && data.remainingOff > 0 && sel.value === "出勤") {
-                        sel.value = "公休";
-                        data.remainingOff--;
-                        streak = 0;
-                    }
-                } else {
-                    streak = 0;
-                }
-            });
-        }
-    });
+    updateSummary();
+    alert("シフトの自動作成が完了しました。左側の集計欄をご確認ください。");
+}
 
-    alert("必要人数と連勤条件を考慮してシフトを作成しました。");
+function updateSummary() {
+    const summaryList = document.getElementById('summaryList');
+    const selects = document.querySelectorAll('.shift-select');
+    
+    summaryList.innerHTML = staffs.map((s, idx) => {
+        const mySelects = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
+        const counts = { "出勤": 0, "公休": 0, "希望休": 0, "有給": 0 };
+        mySelects.forEach(sel => counts[sel.value]++);
+        
+        return `
+            <div class="summary-row">
+                <div class="summary-name">${s.name} (${s.type==='full'?'常勤':'非常勤'})</div>
+                <div>出勤計: ${counts["出勤"]+counts["有給"]}日</div>
+                <div>公休: ${counts["公休"]}日</div>
+                <div>希望休: ${counts["希望休"]}日</div>
+                <div>有給: ${counts["有給"]}日</div>
+            </div>
+        `;
+    }).join('');
 }
