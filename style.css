@@ -1,41 +1,39 @@
-:root {
-    --primary: #1a237e;
-    --accent: #00e676;
-    --bg: #f0f2f5;
-    --border: #e0e0e0;
+/* 基本設定 */
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; margin: 10px; color: #333; }
+.container { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+h1 { font-size: 1.2rem; text-align: center; margin-bottom: 15px; }
+
+/* コントロールエリア */
+.controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
+input[type="month"] { padding: 10px; font-size: 16px; border: 1px solid #ddd; border-radius: 8px; width: 100%; }
+.btn-group { display: flex; gap: 10px; }
+button { flex: 1; padding: 12px; font-size: 14px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+.primary-btn { background: #007bff; color: white; }
+
+/* レイアウト */
+.main-layout { display: flex; flex-direction: column; gap: 20px; }
+
+/* スタッフリスト（スマホでは横並びスクロール可） */
+.staff-panel { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 10px; }
+.staff-item { flex: 0 0 200px; background: #f8f9fa; padding: 10px; border-radius: 8px; border: 1px solid #dee2e6; }
+
+/* シフト表（横スクロール必須） */
+.table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid #dee2e6; border-radius: 8px; }
+table { border-collapse: collapse; min-width: 1200px; } /* 日付が多いので横幅を確保 */
+th, td { border: 1px solid #dee2e6; padding: 8px 4px; text-align: center; }
+th { background: #f1f3f5; font-size: 12px; }
+
+/* スマホ用セレクトボックス */
+.shift-select { 
+    width: 40px; height: 35px; font-size: 16px; /* iOSの自動ズーム防止に16px以上 */
+    border: 1px solid #ced4da; border-radius: 4px; text-align-last: center;
 }
 
-body { font-family: sans-serif; background: var(--bg); margin: 0; color: #333; }
-.app-container { max-width: 1400px; margin: 0 auto; padding: 15px; }
+/* 集計エリア */
+.summary-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+.summary-row { background: #fff; padding: 12px; border: 1px solid #dee2e6; border-radius: 8px; font-size: 13px; line-height: 1.6; }
 
-header { display: flex; justify-content: space-between; align-items: center; background: var(--primary); color: white; padding: 15px 25px; border-radius: 10px; margin-bottom: 15px; }
-.version { font-size: 10px; background: var(--accent); color: var(--primary); padding: 2px 6px; border-radius: 4px; }
-
-main { display: grid; grid-template-columns: 280px 1fr; gap: 15px; }
-.card { background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; }
-h3 { margin: 0 0 15px 0; font-size: 15px; border-bottom: 2px solid var(--bg); padding-bottom: 5px; }
-
-.staff-item { display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid #eee; border-radius: 6px; margin-bottom: 10px; background: #fafafa; }
-.staff-row-top { display: flex; gap: 5px; }
-.staff-row-bottom { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
-
-.staff-item input[type="text"] { flex: 1; padding: 4px; border: 1px solid #ddd; border-radius: 4px; }
-.staff-item input[type="number"] { width: 35px; padding: 2px; }
-.staff-item select { padding: 2px; font-size: 11px; }
-
-.table-area { background: white; border-radius: 10px; padding: 15px; overflow: hidden; }
-.table-wrapper { overflow-x: auto; }
-table { border-collapse: collapse; width: 100%; font-size: 12px; table-layout: fixed; }
-th, td { border: 1px solid var(--border); padding: 6px 2px; text-align: center; }
-
-.sat { background-color: #e3f2fd !important; }
-.sun { background-color: #ffebee !important; }
-
-select.shift-select { width: 100%; border: none; background: transparent; font-weight: bold; text-align-last: center; cursor: pointer; }
-.need-count-input { width: 25px; border: 1px solid var(--accent); text-align: center; border-radius: 4px; }
-
-.btn-primary { background: var(--accent); color: var(--primary); border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-.btn-secondary { width: 100%; padding: 8px; border: 1px solid #ddd; background: white; border-radius: 6px; cursor: pointer; }
-
-.summary-row { font-size: 11px; padding: 8px; background: #f8f9fa; border-radius: 6px; margin-bottom: 8px; border-left: 3px solid var(--primary); }
-.summary-name { font-weight: bold; display: block; margin-bottom: 3px; }
+/* 休日等の色付け */
+.sat { color: #007bff; background: #e7f1ff; }
+.sun { color: #dc3545; background: #fff5f5; }
