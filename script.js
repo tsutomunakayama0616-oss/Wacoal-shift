@@ -17,14 +17,14 @@ function renderStaffList() {
     const list = document.getElementById('staffList');
     list.innerHTML = staffs.map((s, i) => `
         <div class="staff-item">
-            <input type="text" value="${s.name}" style="width:100%; margin-bottom:5px;" onchange="staffs[${i}].name=this.value; generateTable();">
-            <select style="width:100%;" onchange="staffs[${i}].type=this.value; updateSummary();">
+            <input type="text" value="${s.name}" style="width:100%;" onchange="staffs[${i}].name=this.value; generateTable();">
+            <select style="width:100%; margin-top:5px;" onchange="staffs[${i}].type=this.value; updateSummary();">
                 <option value="full" ${s.type==='full'?'selected':''}>常勤</option>
                 <option value="part" ${s.type==='part'?'selected':''}>非常勤</option>
             </select>
-            <div style="margin-top:8px;">
-                有給: <input type="number" value="${s.paidDays}" min="0" style="width:50px;" onchange="staffs[${i}].paidDays=parseInt(this.value)||0; updateSummary();">日
-                <button onclick="removeStaff(${i})" style="padding:2px 5px; background:#ff4d4d; color:white; border:none; border-radius:4px; float:right;">×</button>
+            <div style="margin-top:8px; font-size:13px;">
+                有給: <input type="number" value="${s.paidDays}" min="0" style="width:40px;" onchange="staffs[${i}].paidDays=parseInt(this.value)||0; updateSummary();">日
+                <button onclick="removeStaff(${i})" style="float:right; background:#ff4d4d; color:white; border:none; padding:2px 6px; border-radius:4px;">×</button>
             </div>
         </div>
     `).join('');
@@ -39,10 +39,8 @@ function generateTable() {
     const [year, month] = dateVal.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
     
-    // 日付行
     document.getElementById('dateRow').innerHTML = '<th>名前</th>' + Array.from({length: daysInMonth}, (_, i) => `<th>${i+1}</th>`).join('');
     
-    // 曜日行
     let dayHtml = '<th>曜</th>';
     for (let d = 1; d <= daysInMonth; d++) {
         const dayOfWeek = new Date(year, month - 1, d).getDay();
@@ -51,7 +49,6 @@ function generateTable() {
     }
     document.getElementById('dayRow').innerHTML = dayHtml;
 
-    // シフト入力行
     document.getElementById('shiftBody').innerHTML = staffs.map((staff, sIdx) => {
         let cells = `<td>${staff.name}</td>`;
         for (let d = 1; d <= daysInMonth; d++) {
@@ -60,21 +57,18 @@ function generateTable() {
         return `<tr>${cells}</tr>`;
     }).join('');
 
-    // 【修正ポイント】必要人数の入力行
     let footHtml = '<td>必要人数</td>';
     for (let d = 1; d <= daysInMonth; d++) {
-        footHtml += `<td><input type="number" class="need-count-input" data-day="${d}" value="3" style="width:35px; border:1px solid #ccc; text-align:center;"></td>`;
+        footHtml += `<td><input type="number" class="need-count-input" value="3" style="width:35px; text-align:center;"></td>`;
     }
     document.getElementById('shiftFoot').innerHTML = `<tr>${footHtml}</tr>`;
-    
     updateSummary();
 }
 
 function autoFillShift() {
     const selects = document.querySelectorAll('.shift-select');
-    const needInputs = document.querySelectorAll('.need-count-input'); // 人数入力を取得
-    const dateVal = document.getElementById('targetMonth').value;
-    const [year, month] = dateVal.split('-').map(Number);
+    const needInputs = document.querySelectorAll('.need-count-input');
+    const [year, month] = document.getElementById('targetMonth').value.split('-').map(Number);
     const daysInMonth = new Date(year, month, 0).getDate();
 
     let finalGrid = null;
@@ -84,7 +78,6 @@ function autoFillShift() {
             return (val === "希望休") ? "希望休" : "";
         }));
 
-        // 1. 有給配置
         grid.forEach((row, sIdx) => {
             let needed = staffs[sIdx].paidDays;
             let emptyIdx = row.map((v, i) => v === "" ? i : -1).filter(i => i !== -1);
@@ -95,10 +88,9 @@ function autoFillShift() {
             }
         });
 
-        // 2. 出勤配置
         let fail = false;
         for (let d = 0; d < daysInMonth; d++) {
-            const currentNeed = parseInt(needInputs[d].value) || 0; // 各日の必要人数を使用
+            const currentNeed = parseInt(needInputs[d].value) || 0;
             let candidates = staffs.map((_, i) => i).filter(sIdx => {
                 if (grid[sIdx][d] !== "") return false;
                 let streak = 0;
@@ -116,7 +108,6 @@ function autoFillShift() {
         }
         if (fail) continue;
 
-        // 3. 常勤休み9日調整
         let adjFail = false;
         grid.forEach((row, sIdx) => {
             row.forEach((v, i) => { if(v==="") row[i] = "公休"; });
@@ -147,9 +138,9 @@ function autoFillShift() {
     if (finalGrid) {
         selects.forEach(sel => { sel.value = finalGrid[sel.dataset.staff][sel.dataset.day - 1]; });
         updateSummary();
-        alert("生成完了：すべての制限と必要人数をクリアしました。");
+        alert("完成しました！");
     } else {
-        alert("条件が厳しすぎます。スタッフを増やすか、必要人数を減らしてください。");
+        alert("条件が厳しすぎます。設定を見直してください。");
     }
 }
 
@@ -160,6 +151,6 @@ function updateSummary() {
         const mySels = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
         const c = { "出勤":0, "公休":0, "希望休":0, "有給":0, "":0 };
         mySels.forEach(sel => { if(c.hasOwnProperty(sel.value)) c[sel.value]++; });
-        return `<div class="summary-row"><strong>${s.name}</strong> (${s.type==='full'?'常勤':'非常勤'})<br>出勤:${c["出勤"]}回 / 有給:${c["有給"]}日 / 休み計:${c["公休"]+c["希望休"]}日</div>`;
+        return `<div class="summary-row"><strong>${s.name}</strong> (${s.type==='full'?'常勤':'非常勤'})<br>出勤:${c["出勤"]} / 有給:${c["有給"]} / 休み計:${c["公休"]+c["希望休"]}</div>`;
     }).join('');
 }
