@@ -3,47 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>シフト自動作成アプリ v2</title>
+    <title>Advanced Shift Manager</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="container">
-        <h1>シフト自動作成システム v2</h1>
-
-        <section class="config-section">
-            <div class="date-picker">
-                <label>設定年月：</label>
-                <input type="month" id="targetMonth" onchange="generateTable()">
+    <div class="app-container">
+        <header>
+            <h1>Shift Planner <span class="version">Pro v3</span></h1>
+            <div class="header-controls">
+                <div class="input-group">
+                    <label>対象年月</label>
+                    <input type="month" id="targetMonth" onchange="generateTable()">
+                </div>
+                <button class="btn-primary" onclick="autoFillShift()">自動作成を実行</button>
             </div>
-            
-            <div class="staff-management">
-                <h3>スタッフ管理</h3>
-                <div id="staffList"></div>
-                <button onclick="addStaff()">スタッフ追加</button>
-            </div>
-        </section>
+        </header>
 
-        <section class="control-section">
-            <div class="guide">
-                <strong>【操作手順】</strong><br>
-                1. <strong>定休日・希望休</strong>を先に選択してください（定休日は全員「公」にするなど）。<br>
-                2. 日ごとの<strong>「必要人数」</strong>（表の最下部）を入力してください。<br>
-                3. 「シフト自動入力実行」をクリックしてください。
-            </div>
-            <button class="btn-generate" onclick="autoFillShift()">シフト自動入力実行</button>
-        </section>
+        <main>
+            <aside class="sidebar">
+                <div class="card">
+                    <h3>スタッフ設定</h3>
+                    <p class="instruction">非常勤は出勤上限10日です</p>
+                    <div id="staffList"></div>
+                    <button class="btn-secondary" onclick="addStaff()">+ スタッフ追加</button>
+                </div>
 
-        <div class="table-wrapper">
-            <table id="shiftTable">
-                <thead>
-                    <tr id="dateRow"></tr>
-                    <tr id="dayRow"></tr>
-                </thead>
-                <tbody id="shiftBody"></tbody>
-                <tfoot id="shiftFoot">
-                    </tfoot>
-            </table>
-        </div>
+                <div class="card status-card">
+                    <h3>今月の集計</h3>
+                    <div id="summaryList">
+                        <p class="placeholder">作成後に表示されます</p>
+                    </div>
+                </div>
+            </aside>
+
+            <section class="table-area">
+                <div class="guide-banner">
+                    <p>❶ 希望休・定休日を先に選択 ❷ 日ごとの必要人数を入力 ❸ 自動作成を実行</p>
+                </div>
+                <div class="table-wrapper">
+                    <table id="shiftTable">
+                        <thead>
+                            <tr id="dateRow"></tr>
+                            <tr id="dayRow"></tr>
+                        </thead>
+                        <tbody id="shiftBody"></tbody>
+                        <tfoot id="shiftFoot"></tfoot>
+                    </table>
+                </div>
+            </section>
+        </main>
     </div>
     <script src="script.js"></script>
 </body>
