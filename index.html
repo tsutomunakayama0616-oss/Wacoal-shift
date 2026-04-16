@@ -2,23 +2,31 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>シフト作成システム</title>
+    <title>シフト作成システム - 柔軟調整版</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <h1>シフト作成システム</h1>
-
         <div class="controls">
             <input type="month" id="targetMonth" onchange="generateTable()">
+            
+            <div class="setting-group">
+                <label>基本の目標出勤人数：</label>
+                <select id="defaultNeedCount" onchange="generateTable()">
+                    <option value="3">3名（無理なら2名）</option>
+                    <option value="2">2名</option>
+                </select>
+            </div>
+
             <div class="btn-group">
                 <button class="add-btn" onclick="addStaff()">＋スタッフ追加</button>
                 <button class="primary-btn" onclick="autoFillShift()">自動生成開始</button>
             </div>
         </div>
-
+        <p style="font-size: 12px; color: #666;">※ 下の青枠の数字を直接書き換えて「この日は絶対3人」といった指定も可能です。</p>
+        
         <div id="staffList" class="staff-panel"></div>
-
         <div class="table-container">
             <table>
                 <thead>
@@ -30,7 +38,6 @@
                 <tfoot id="shiftFoot"></tfoot>
             </table>
         </div>
-
         <div id="summaryList" class="summary-grid"></div>
     </div>
     <script src="script.js"></script>
