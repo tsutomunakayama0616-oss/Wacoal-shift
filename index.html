@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>シフト自動作成アプリ</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>シフト自動作成システム</h1>
+
+        <section class="config-section">
+            <div class="date-picker">
+                <label>設定年月：</label>
+                <input type="month" id="targetMonth" onchange="generateTable()">
+            </div>
+            
+            <div class="staff-management">
+                <h3>スタッフ管理</h3>
+                <div id="staffList"></div>
+                <button onclick="addStaff()">スタッフ追加</button>
+            </div>
+        </section>
+
+        <section class="control-section">
+            <button class="btn-generate" onclick="autoFillShift()">シフト自動入力実行</button>
+            <p class="hint">※希望休（希）を先に手動で入力してから実行してください。</p>
+        </section>
+
+        <div class="table-wrapper">
+            <table id="shiftTable">
+                <thead>
+                    <tr id="dateRow"></tr>
+                    <tr id="dayRow"></tr>
+                </thead>
+                <tbody id="shiftBody"></tbody>
+            </table>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
