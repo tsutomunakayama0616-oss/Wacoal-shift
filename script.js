@@ -1,264 +1,208 @@
+// 初期スタッフ構成（常勤A-D, 非常勤E）
 let staffs = [
-    { name: "スタッフ1", type: "full", paidDays: 2 },
-    { name: "スタッフ2", type: "full", paidDays: 2 },
-    { name: "スタッフ3", type: "full", paidDays: 2 },
-    { name: "スタッフ4", type: "full", paidDays: 2 },
-    { name: "非常勤1", type: "part", paidDays: 1 }
+    { name: "スタッフA", type: "full", paidDays: 0 },
+    { name: "スタッフB", type: "full", paidDays: 0 },
+    { name: "スタッフC", type: "full", paidDays: 0 },
+    { name: "スタッフD", type: "full", paidDays: 0 },
+    { name: "スタッフE", type: "part", paidDays: 0 }
 ];
-
-let prevMonthEnd = Array(staffs.length).fill(0);
 
 window.onload = () => {
     const now = new Date();
-    targetMonth.value =
-        `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-
+    const monthInput = document.getElementById('targetMonth');
+    if (monthInput) {
+        monthInput.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        monthInput.addEventListener('change', generateTable);
+    }
     renderStaffList();
     generateTable();
-
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('sw.js');
-    }
 };
 
-/**
- * 連勤チェック（前月含む）
- */
-function canWork(row, d, limit, prev) {
-    let streak = prev;
-    for (let i = d - 1; i >= 0; i--) {
-        if (row[i] === "出勤") streak++;
-        else break;
+function canWork(gridRow, dayIdx, limit) {
+    let prev = 0;
+    for (let i = dayIdx - 1; i >= 0; i--) {
+        if (gridRow[i] === "出勤") prev++; else break;
     }
-    return streak < limit;
+    let next = 0;
+    for (let i = dayIdx + 1; i < gridRow.length; i++) {
+        if (gridRow[i] === "出勤") next++; else break;
+    }
+    return (prev + next + 1) <= limit;
 }
 
-/**
- * 自動生成（完成版）
- */
+function countWork(row) { return row.filter(v => v === "出勤").length; }
+function countOff(row) { return row.filter(v => ["公休", "希望休", "有給"].includes(v)).length; }
+
 function autoFillShift() {
+    const selects = Array.from(document.querySelectorAll('.shift-select'));
+    const needInputs = Array.from(document.querySelectorAll('.need-count-input'));
+    const daysInMonth = needInputs.length;
+    const dailyTargets = needInputs.map(input => parseInt(input.value) || 0);
 
-    const selects = [...document.querySelectorAll('.shift-select')];
-    const needs = [...document.querySelectorAll('.need-count-input')];
-    const days = needs.length;
+    // 1. グリッド初期化 & 有給配置
+    let grid = staffs.map((staff, sIdx) => {
+        let row = Array.from({length: daysInMonth}, (_, d) => {
+            const sel = selects.find(s => parseInt(s.dataset.staff) === sIdx && parseInt(s.dataset.day) === d+1);
+            return (sel && sel.value !== "") ? sel.value : "";
+        });
 
-    let grid = staffs.map(() => Array(days).fill("公休"));
-    let workCount = Array(staffs.length).fill(0);
-
-    // ----------------------
-    // ① 希望休（最優先）
-    // ----------------------
-    selects.forEach(sel => {
-        if (sel.value === "希望休") {
-            grid[sel.dataset.staff][sel.dataset.day-1] = "希望休";
+        // 有給の自動反映
+        let paidNeeded = staff.paidDays;
+        let safety = 0;
+        while (paidNeeded > 0 && safety < 100) {
+            let d = Math.floor(Math.random() * daysInMonth);
+            if (row[d] === "") { row[d] = "有給"; paidNeeded--; }
+            safety++;
         }
+
+        // 暫定埋め
+        if (staff.type === 'full') {
+            let offNeeded = 9 - countOff(row);
+            while (offNeeded > 0) {
+                let d = Math.floor(Math.random() * daysInMonth);
+                if (row[d] === "") { row[d] = "公休"; offNeeded--; }
+            }
+            for(let i=0; i<daysInMonth; i++) if(row[i] === "") row[i] = "出勤";
+        } else {
+            for(let i=0; i<daysInMonth; i++) if(row[i] === "") row[i] = "公休";
+        }
+        return row;
     });
 
-    // ----------------------
-    // ② 有給（固定配置・消費しない）
-    // ----------------------
+    // 2. 人数調整：不足補填 (休み多い常勤を優先して仕事に回す)
+    for (let d = 0; d < daysInMonth; d++) {
+        let target = dailyTargets[d];
+        let workers = staffs.map((_, i) => i).filter(i => grid[i][d] === "出勤");
+        
+        if (workers.length < target) {
+            let candidates = staffs.map((_, i) => i).filter(i => {
+                const sel = selects.find(s => parseInt(s.dataset.staff) === i && parseInt(s.dataset.day) === d+1);
+                if (sel && ["希望休", "有給", "公休"].includes(sel.value)) return false;
+                if (grid[i][d] !== "公休") return false;
+                if (staffs[i].type === "full" && countOff(grid[i]) <= 9) return false;
+                return true;
+            });
+            candidates.sort((a, b) => countOff(grid[b]) - countOff(grid[a]));
+            for (let idx of candidates) {
+                if (workers.length >= target) break;
+                grid[idx][d] = "出勤";
+                workers.push(idx);
+            }
+        }
+    }
+
+    // 3. 最終確定収束（常勤9休絶対防衛）
     for (let s = 0; s < staffs.length; s++) {
-
-        let daysList = [...Array(days).keys()]
-            .sort(() => Math.random() - 0.5);
-
-        let count = 0;
-
-        for (let d of daysList) {
-            if (count >= staffs[s].paidDays) break;
-
-            if (grid[s][d] === "公休") {
-                grid[s][d] = "有給";
-                count++;
-            }
-        }
-    }
-
-    // ----------------------
-    // ③ need充足＋公平性
-    // ----------------------
-    for (let d = 0; d < days; d++) {
-
-        let need = parseInt(needs[d].value) || 0;
-        let loopGuard = 0;
-
-        while (
-            grid.filter(r => r[d] === "出勤").length < need &&
-            loopGuard < 5000
-        ) {
-
-            let order = staffs.map((_, i)=>i)
-                .sort((a,b)=>workCount[a]-workCount[b]);
-
-            for (let s of order) {
-
-                if (
-                    grid[s][d] === "公休" &&
-                    canWork(
-                        grid[s],
-                        d,
-                        staffs[s].type==="full"?4:2,
-                        prevMonthEnd[s]
-                    )
-                ) {
-                    grid[s][d] = "出勤";
-                    workCount[s]++;
-                    break;
+        let row = grid[s];
+        if (staffs[s].type === "full") {
+            while (countOff(row) > 9) {
+                let changed = false;
+                for (let d = 0; d < daysInMonth; d++) {
+                    if (countOff(row) <= 9) break;
+                    if (row[d] === "公休" && canWork(row, d, 4)) {
+                        const sel = selects.find(ui => parseInt(ui.dataset.staff) === s && parseInt(ui.dataset.day) === d+1);
+                        if (!sel || (sel.value !== "希望休" && sel.value !== "有給")) {
+                            row[d] = "出勤"; changed = true;
+                        }
+                    }
                 }
+                if (!changed) break;
             }
-
-            loopGuard++;
+            while (countOff(row) < 9) {
+                let changed = false;
+                for (let d = 0; d < daysInMonth; d++) {
+                    if (countOff(row) >= 9) break;
+                    if (row[d] === "出勤") {
+                        const sel = selects.find(ui => parseInt(ui.dataset.staff) === s && parseInt(ui.dataset.day) === d+1);
+                        if (!sel || sel.value !== "出勤") {
+                            row[d] = "公休"; changed = true;
+                        }
+                    }
+                }
+                if (!changed) break;
+            }
         }
     }
 
-    // ----------------------
-    // ④ 前月連勤更新
-    // ----------------------
-    prevMonthEnd = grid.map(row => {
-        let count = 0;
-        for (let i=row.length-1;i>=0;i--) {
-            if (row[i]==="出勤") count++;
-            else break;
-        }
-        return count;
+    selects.forEach(sel => {
+        sel.value = grid[parseInt(sel.dataset.staff)][parseInt(sel.dataset.day) - 1];
     });
-
-    // ----------------------
-    // ⑤ UI反映
-    // ----------------------
-    selects.forEach(sel=>{
-        sel.value = grid[sel.dataset.staff][sel.dataset.day-1];
-    });
-
-    checkShortage(grid, needs);
     updateSummary();
-
-    alert("自動生成完了（有給固定版）");
 }
 
-/**
- * 不足チェック
- */
-function checkShortage(grid, needs){
-    let msg=[];
-    for(let d=0;d<needs.length;d++){
-        let assigned=grid.filter(r=>r[d]==="出勤").length;
-        if(assigned<needs[d].value){
-            msg.push(`${d+1}日：不足${needs[d].value-assigned}`);
-        }
+function generateTable() {
+    const monthInput = document.getElementById('targetMonth');
+    const [year, month] = monthInput.value.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const defaultNeed = document.getElementById('defaultNeedCount').value;
+
+    let dRow = '<th>名前</th>', wRow = '<th>曜</th>', hRow = '<th>一括</th>';
+    for (let d = 1; d <= daysInMonth; d++) {
+        const date = new Date(year, month - 1, d);
+        const dayOfWeek = date.getDay();
+        const dayClass = dayOfWeek === 6 ? 'sat' : dayOfWeek === 0 ? 'sun' : '';
+        dRow += `<th>${d}</th>`;
+        wRow += `<th class="${dayClass}">${["日","月","火","水","木","金","土"][dayOfWeek]}</th>`;
+        hRow += `<td><button onclick="setColumnHoliday(${d})" style="font-size:10px">休</button></td>`;
     }
-    if(msg.length>0){
-        alert("人員不足\n"+msg.join("\n"));
-    }
-}
+    document.getElementById('dateRow').innerHTML = dRow;
+    document.getElementById('dayRow').innerHTML = wRow;
+    document.getElementById('holidayRow').innerHTML = hRow;
 
-/**
- * 以下UI系（そのまま）
- */
-function generateTable(){
-    const [y,m]=targetMonth.value.split('-');
-    const days=new Date(y,m,0).getDate();
-
-    let dRow="<th>名前</th>";
-    let wRow="<th>曜</th>";
-    let hRow="<th>一括</th>";
-
-    for(let d=1;d<=days;d++){
-        let day=new Date(y,m-1,d).getDay();
-        dRow+=`<th>${d}</th>`;
-        wRow+=`<th>${["日","月","火","水","木","金","土"][day]}</th>`;
-        hRow+=`<td><button onclick="setColumnHoliday(${d})">休</button></td>`;
-    }
-
-    dateRow.innerHTML=dRow;
-    dayRow.innerHTML=wRow;
-    holidayRow.innerHTML=hRow;
-
-    shiftBody.innerHTML=staffs.map((s,i)=>{
-        let row=`<td>${s.name}</td>`;
-        for(let d=1;d<=days;d++){
-            row+=`<td>
-            <select class="shift-select" data-staff="${i}" data-day="${d}" onchange="updateSummary()">
-                <option value=""></option>
-                <option value="出勤">出</option>
-                <option value="公休">公</option>
-                <option value="希望休">希</option>
-                <option value="有給">有</option>
+    document.getElementById('shiftBody').innerHTML = staffs.map((staff, sIdx) => {
+        let cells = `<td style="background:#eee; font-weight:bold;">${staff.name}</td>`;
+        for (let d = 1; d <= daysInMonth; d++) {
+            cells += `<td><select class="shift-select" data-staff="${sIdx}" data-day="${d}" onchange="updateSummary()">
+                <option value="">-</option><option value="出勤">出</option><option value="公休">公</option><option value="希望休">希</option><option value="有給">有</option>
             </select></td>`;
         }
-        return `<tr>${row}</tr>`;
+        return `<tr>${cells}</tr>`;
     }).join('');
 
-    let f="<td>必要</td>";
-    for(let i=0;i<days;i++){
-        f+=`<td><input class="need-count-input" value="3"></td>`;
-    }
-    shiftFoot.innerHTML=`<tr>${f}</tr>`;
+    let fRow = '<td>目標</td>';
+    for (let d = 1; d <= daysInMonth; d++) fRow += `<td><input type="number" class="need-count-input" data-day="${d}" value="${defaultNeed}" style="width:25px"></td>`;
+    document.getElementById('shiftFoot').innerHTML = `<tr>${fRow}</tr>`;
+    updateSummary();
 }
 
-function updateSummary(){
-    const selects=document.querySelectorAll('.shift-select');
-    summaryList.innerHTML=staffs.map((s,i)=>{
-        let my=[...selects].filter(x=>x.dataset.staff==i);
-        let w=my.filter(x=>x.value==="出勤").length;
-        let p=my.filter(x=>x.value==="有給").length;
-        return `${s.name} 出:${w} 有:${p}`;
-    }).join("<br>");
+function setColumnHoliday(day) {
+    document.querySelectorAll(`.shift-select[data-day="${day}"]`).forEach(s => {
+        if (!["希望休", "有給", "出勤"].includes(s.value)) s.value = "公休";
+    });
+    const need = document.querySelector(`.need-count-input[data-day="${day}"]`);
+    if(need) need.value = 0;
+    updateSummary();
 }
 
-function renderStaffList(){
-    staffList.innerHTML=staffs.map((s,i)=>`
-    <div>
-        <input value="${s.name}" onchange="staffs[${i}].name=this.value">
-        <select onchange="staffs[${i}].type=this.value">
-            <option value="full">常勤</option>
-            <option value="part">非常勤</option>
-        </select>
-        有給:<input type="number" value="${s.paidDays}"
-        onchange="staffs[${i}].paidDays=parseInt(this.value)||0">
-    </div>
+function renderStaffList() {
+    const list = document.getElementById('staffList');
+    if (!list) return;
+    list.innerHTML = staffs.map((s, i) => `
+        <div class="staff-item">
+            <input type="text" value="${s.name}" onchange="staffs[${i}].name=this.value; generateTable();" style="width:120px">
+            <select onchange="staffs[${i}].type=this.value; updateSummary();">
+                <option value="full" ${s.type==='full'?'selected':''}>常勤</option>
+                <option value="part" ${s.type==='part'?'selected':''}>非常勤</option>
+            </select><br>
+            <div style="margin-top:5px">
+                有給: <input type="number" value="${s.paidDays}" onchange="staffs[${i}].paidDays=parseInt(this.value)||0; updateSummary();" style="width:35px"> 日
+                <button onclick="removeStaff(${i})" style="color:red; border:none; background:none; cursor:pointer; float:right">削除</button>
+            </div>
+        </div>
     `).join('');
 }
 
-function addStaff(){
-    staffs.push({name:"新規",type:"full",paidDays:0});
-    renderStaffList();
-    generateTable();
-}
-
-function resetShift(){
-    document.querySelectorAll('.shift-select').forEach(s=>s.value="");
-}
-
-function setColumnHoliday(day){
-    document.querySelectorAll(`[data-day="${day}"]`)
-    .forEach(s=>{
-        if(s.value!=="希望休") s.value="公休";
-    });
-}
-
-/**
- * 保存・読込
- */
-function saveData(){
-    const data={
-        staffs,
-        shifts:[...document.querySelectorAll('.shift-select')].map(s=>s.value)
-    };
-    localStorage.setItem("shiftData",JSON.stringify(data));
-    alert("保存しました");
-}
-
-function loadData(){
-    const data=JSON.parse(localStorage.getItem("shiftData"));
-    if(!data) return;
-
-    staffs=data.staffs;
-    renderStaffList();
-    generateTable();
-
-    document.querySelectorAll('.shift-select')
-    .forEach((s,i)=>s.value=data.shifts[i]);
-
-    alert("読込完了");
+function addStaff() { staffs.push({ name: "新規", type: "full", paidDays: 0 }); renderStaffList(); generateTable(); }
+function removeStaff(idx) { staffs.splice(idx, 1); renderStaffList(); generateTable(); }
+function updateSummary() {
+    const selects = document.querySelectorAll('.shift-select');
+    const summaryList = document.getElementById('summaryList');
+    if (!summaryList) return;
+    summaryList.innerHTML = staffs.map((s, idx) => {
+        const mySelects = Array.from(selects).filter(sel => parseInt(sel.dataset.staff) === idx);
+        const counts = { "出勤": 0, "公休": 0, "希望休": 0, "有給": 0 };
+        mySelects.forEach(sel => { if (counts[sel.value] !== undefined) counts[sel.value]++; });
+        const totalOff = counts["公休"] + counts["希望休"] + counts["有給"];
+        return `<div style="font-size:12px; margin-bottom:5px;"><b>${s.name}</b><br>出: ${counts["出勤"]} / 休: ${totalOff} (有給:${counts["有給"]})</div>`;
+    }).join('');
 }
