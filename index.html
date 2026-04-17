@@ -1,57 +1,50 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Wacoalシフト管理APP</title>
-    <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#e3005f">
-    <link rel="apple-touch-icon" href="icon-192.png">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>シフト自動生成</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
 </head>
+
 <body>
-    <div class="app-container">
-        <h1>Wacoalシフト管理</h1>
-        
-        <div class="config-section">
-            <input type="month" id="targetMonth">
-            <div class="need-config">
-                標準目標人数: <input type="number" id="defaultNeedCount" value="3" min="0">
-            </div>
-            <button onclick="addStaff()" class="btn-secondary">スタッフ追加</button>
-        </div>
+<h1>シフト自動生成</h1>
 
-        <div id="staffList" class="staff-grid"></div>
+<div>
+対象月：
+<input type="month" id="targetMonth">
+必要人数：
+<input type="number" id="defaultNeedCount" value="3">
+<button onclick="generateTable()">再描画</button>
+</div>
 
-        <div class="table-wrapper">
-            <table>
-                <thead>
-                    <tr id="dateRow"></tr>
-                    <tr id="dayRow"></tr>
-                    <tr id="holidayRow"></tr>
-                </thead>
-                <tbody id="shiftBody"></tbody>
-                <tfoot id="shiftFoot"></tfoot>
-            </table>
-        </div>
+<hr>
 
-        <div class="action-bar">
-            <button onclick="autoFillShift()" class="btn-primary">シフトを自動生成</button>
-            <button onclick="resetShift()" class="btn-reset">リセット</button>
-        </div>
+<h2>スタッフ</h2>
+<div id="staffList"></div>
+<button onclick="addStaff()">追加</button>
 
-        <div id="summaryList" class="summary-section"></div>
-    </div>
+<hr>
 
-    <script src="script.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('SW Registered'))
-                    .catch(err => console.error('SW Registration failed', err));
-            });
-        }
-    </script>
+<button onclick="autoFillShift()">自動生成</button>
+<button onclick="resetShift()">リセット</button>
+<button onclick="saveData()">保存</button>
+<button onclick="loadData()">読込</button>
+
+<table border="1">
+<thead>
+<tr id="dateRow"></tr>
+<tr id="dayRow"></tr>
+<tr id="holidayRow"></tr>
+</thead>
+<tbody id="shiftBody"></tbody>
+<tfoot id="shiftFoot"></tfoot>
+</table>
+
+<h2>集計</h2>
+<div id="summaryList"></div>
+
+<script src="script.js"></script>
 </body>
 </html>
