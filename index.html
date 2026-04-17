@@ -2,35 +2,41 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>シフト自動生成 - 完全版</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>シフト自動生成 - Pro</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
     <div class="container">
-        <h1>シフト自動生成システム</h1>
+        <header>
+            <h1>シフト自動生成システム</h1>
+        </header>
         
         <div class="config-section">
-            <div class="input-group">
-                <label>対象年月:</label>
-                <input type="month" id="targetMonth">
-            </div>
-            <div class="input-group">
-                <label>標準必要人数:</label>
-                <input type="number" id="defaultNeedCount" value="2" min="0">
+            <div class="input-row">
+                <div class="input-group">
+                    <label>対象年月</label>
+                    <input type="month" id="targetMonth">
+                </div>
+                <div class="input-group">
+                    <label>目標人数</label>
+                    <input type="number" id="defaultNeedCount" value="2" min="0">
+                </div>
             </div>
             <button onclick="autoFillShift()" class="btn-primary">自動生成を実行</button>
         </div>
 
         <div class="main-layout">
-            <div class="staff-management">
+            <aside class="staff-management">
                 <h3>スタッフ管理</h3>
                 <div id="staffList"></div>
                 <button onclick="addStaff()" class="btn-secondary">+ スタッフ追加</button>
-            </div>
+            </aside>
 
-            <div class="table-container">
+            <main class="table-container">
                 <table id="shiftTable">
                     <thead>
                         <tr id="dateRow"></tr>
@@ -40,12 +46,12 @@
                     <tbody id="shiftBody"></tbody>
                     <tfoot id="shiftFoot"></tfoot>
                 </table>
-            </div>
+            </main>
 
-            <div class="summary-section">
-                <h3>勤務集計</h3>
+            <aside class="summary-section">
+                <h3>集計</h3>
                 <div id="summaryList"></div>
-            </div>
+            </aside>
         </div>
     </div>
     <script src="script.js"></script>
